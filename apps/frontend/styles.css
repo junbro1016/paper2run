@@ -387,6 +387,7 @@ button.is-loading:disabled,
   margin-top: auto;
   border-top: 1px solid var(--line);
   padding-top: 18px;
+  min-width: 0;
 }
 
 .status-panel h2 {
@@ -401,6 +402,13 @@ button.is-loading:disabled,
   gap: 8px;
   font-size: 13px;
   color: var(--muted);
+  min-width: 0;
+}
+
+.status-list li {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .status-list li[data-state="done"] {
