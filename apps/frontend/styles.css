@@ -1,16 +1,20 @@
 :root {
   color-scheme: light;
-  --bg: #f6f7f9;
+  --bg: #f6f8f4;
   --surface: #ffffff;
-  --surface-alt: #eef2f5;
+  --surface-alt: #f0f5ed;
   --text: #172026;
   --muted: #64717c;
-  --line: #d9e0e5;
-  --accent: #0f766e;
-  --accent-dark: #115e59;
+  --line: #d9e3d4;
+  --accent: #78b82a;
+  --accent-dark: #4d7c0f;
+  --accent-soft: #e8f7d7;
   --warning: #a16207;
   --danger: #b42318;
-  --shadow: 0 18px 50px rgba(23, 32, 38, 0.08);
+  --shadow: 0 18px 50px rgba(38, 54, 23, 0.08);
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 18px;
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     sans-serif;
@@ -25,10 +29,16 @@ body {
   min-height: 100vh;
   background: var(--bg);
   color: var(--text);
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 button,
-input {
+input,
+.file-button {
   font: inherit;
 }
 
@@ -37,8 +47,29 @@ button {
   background: var(--surface);
   color: var(--text);
   min-height: 42px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    box-shadow 160ms ease,
+    color 160ms ease,
+    transform 160ms ease;
+}
+
+button:hover:not(:disabled),
+.file-button:hover {
+  border-color: #b7d99a;
+  background: #fbfef8;
+  box-shadow: 0 8px 20px rgba(78, 124, 15, 0.1);
+  transform: translateY(-1px);
+}
+
+button:focus-visible,
+input:focus-visible,
+.file-button:focus-visible {
+  outline: 3px solid rgba(120, 184, 42, 0.28);
+  outline-offset: 2px;
 }
 
 button:disabled {
@@ -70,13 +101,14 @@ button:disabled {
 .brand-mark {
   width: 48px;
   height: 48px;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   display: grid;
   place-items: center;
-  background: var(--text);
-  color: white;
+  background: linear-gradient(135deg, var(--text), #4d7c0f);
+  color: #f8ffe9;
   font-weight: 800;
   font-size: 14px;
+  box-shadow: 0 12px 24px rgba(78, 124, 15, 0.18);
 }
 
 .brand h1,
@@ -89,6 +121,7 @@ button:disabled {
 .brand h1 {
   font-size: 22px;
   line-height: 1.1;
+  letter-spacing: 0;
 }
 
 .brand p,
@@ -112,10 +145,53 @@ small {
   width: 100%;
   min-height: 42px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   padding: 0 12px;
   background: white;
   color: var(--text);
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    background 160ms ease;
+}
+
+.control-group input:hover {
+  border-color: #bdd8a7;
+}
+
+.control-group input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px rgba(120, 184, 42, 0.14);
+}
+
+.control-group input[type="file"] {
+  min-height: auto;
+  padding: 8px;
+  background: linear-gradient(180deg, #ffffff, #f8fcf4);
+  cursor: pointer;
+}
+
+.control-group input[type="file"]::file-selector-button {
+  margin-right: 12px;
+  min-height: 34px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  padding: 0 14px;
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.control-group input[type="file"]::file-selector-button:hover {
+  background: var(--accent);
+  color: white;
+  box-shadow: 0 8px 18px rgba(78, 124, 15, 0.18);
 }
 
 .meta-line {
@@ -137,16 +213,24 @@ small {
   gap: 8px;
   min-height: 42px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   text-decoration: none;
   color: var(--text);
   background: var(--surface);
   cursor: pointer;
+  font-weight: 700;
 }
 
 .primary-button {
   border-color: var(--accent);
   background: var(--accent);
+  color: white;
+  box-shadow: 0 10px 24px rgba(78, 124, 15, 0.2);
+}
+
+.primary-button:hover:not(:disabled) {
+  border-color: var(--accent-dark);
+  background: var(--accent-dark);
   color: white;
 }
 
@@ -209,9 +293,10 @@ small {
   display: grid;
   grid-template-columns: repeat(3, minmax(86px, 1fr));
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   overflow: hidden;
   background: var(--surface);
+  box-shadow: 0 10px 28px rgba(38, 54, 23, 0.06);
 }
 
 .summary-strip div {
@@ -227,6 +312,7 @@ small {
   display: block;
   font-size: 24px;
   font-weight: 800;
+  color: var(--accent-dark);
 }
 
 .tabs {
@@ -263,12 +349,13 @@ small {
 .empty-state {
   border: 1px dashed var(--line);
   background: var(--surface);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   min-height: 360px;
   display: grid;
   place-items: center;
   padding: 40px;
   text-align: center;
+  box-shadow: inset 0 0 0 1px rgba(120, 184, 42, 0.08);
 }
 
 .empty-state h3 {
@@ -295,7 +382,7 @@ small {
 .map-row {
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   box-shadow: var(--shadow);
 }
 
@@ -352,14 +439,14 @@ small {
 
 .badge.high {
   color: var(--accent-dark);
-  background: #dff4ef;
-  border-color: #b7e3d8;
+  background: var(--accent-soft);
+  border-color: #cbe8b1;
 }
 
 .latex {
   background: #111827;
   color: #f8fafc;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   padding: 14px;
   overflow-x: auto;
   font-family: "SFMono-Regular", Consolas, monospace;
@@ -376,10 +463,10 @@ small {
   gap: 3px;
   padding: 10px 12px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   color: var(--text);
   text-decoration: none;
-  background: #fbfcfd;
+  background: #fbfef8;
 }
 
 .code-symbol {
@@ -407,7 +494,7 @@ small {
   width: 100%;
   aspect-ratio: 16 / 10;
   object-fit: contain;
-  background: #edf1f4;
+  background: #edf5e8;
   border-bottom: 1px solid var(--line);
 }
 
@@ -430,9 +517,9 @@ small {
 
 .map-node {
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   padding: 12px;
-  background: #fbfcfd;
+  background: #fbfef8;
   min-width: 0;
 }
 
