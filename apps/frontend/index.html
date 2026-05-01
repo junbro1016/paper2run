@@ -28,7 +28,7 @@
           <input
             id="repoUrl"
             type="url"
-            placeholder="https://github.com/owner/repo"
+            placeholder="https://github.com/<owner>/<repo>"
             autocomplete="off"
           />
         </section>
@@ -52,25 +52,25 @@
         <div class="button-grid">
           <button id="extractBtn" class="primary-button" type="button">
             <span aria-hidden="true">↥</span>
-            Extract
+            Extract JSON
           </button>
+          <label class="file-button" for="jsonInput">
+            <span aria-hidden="true">↧</span>
+            Upload JSON
+          </label>
+          <input id="jsonInput" class="visually-hidden" type="file" accept="application/json" />
           <button id="mapBtn" type="button" disabled>
             <span aria-hidden="true">⌁</span>
             Map
           </button>
           <button id="downloadBtn" type="button" disabled>
             <span aria-hidden="true">⇩</span>
-            JSON
+            Download JSON
           </button>
-          <label class="file-button" for="jsonInput">
-            <span aria-hidden="true">↧</span>
-            Load
-          </label>
-          <input id="jsonInput" class="visually-hidden" type="file" accept="application/json" />
         </div>
 
         <section class="status-panel" aria-live="polite">
-          <h2>Run Status</h2>
+          <h2>System Status</h2>
           <ol id="statusList" class="status-list"></ol>
         </section>
       </aside>
@@ -78,7 +78,7 @@
       <section class="workspace">
         <header class="workspace-header">
           <div>
-            <p class="eyebrow">Component Map</p>
+            <p class="eyebrow">Components & Mapping</p>
             <h2 id="paperTitle">Upload a paper to begin</h2>
           </div>
           <div class="summary-strip" aria-label="Extraction summary">
@@ -101,13 +101,13 @@
           <button class="tab is-active" type="button" data-tab="overview">Overview</button>
           <button class="tab" type="button" data-tab="equations">Equations</button>
           <button class="tab" type="button" data-tab="figures">Figures</button>
-          <button class="tab" type="button" data-tab="code">Code Map</button>
+          <button class="tab" type="button" data-tab="code">Code Mapping</button>
         </nav>
 
         <section id="overviewView" class="view is-active">
           <div id="emptyState" class="empty-state">
             <h3>Ready for extraction</h3>
-            <p>Select a PDF, enter the target GitHub repository, then run extraction and mapping.</p>
+            <p>Upload a PDF, enter the target GitHub repository, then run extraction and mapping.</p>
           </div>
           <div id="overviewContent" class="overview-grid"></div>
         </section>
