@@ -210,13 +210,54 @@ small {
   line-height: 1.35;
 }
 
-.button-grid {
+.workflow-panel {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  gap: 12px;
 }
 
-.button-grid button,
+.workflow-step {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #cfe4be;
+  border-radius: var(--radius-md);
+  background: linear-gradient(180deg, #fbfef8, #ffffff);
+  box-shadow: 0 12px 28px rgba(78, 124, 15, 0.07);
+}
+
+.workflow-step-secondary {
+  border-color: var(--line);
+  background: var(--surface);
+  box-shadow: none;
+}
+
+.workflow-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.workflow-copy p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.step-kicker {
+  color: var(--accent-dark);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.action-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.action-row button,
 .file-button {
   display: inline-flex;
   align-items: center;
@@ -236,6 +277,18 @@ small {
   white-space: nowrap;
 }
 
+.file-button.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
+}
+
+.file-button.is-disabled:hover {
+  border-color: var(--line);
+  background: var(--surface);
+  box-shadow: none;
+}
+
 .button-icon {
   width: 17px;
   height: 17px;
@@ -247,6 +300,30 @@ small {
   stroke-width: 2;
 }
 
+.is-loading {
+  position: relative;
+  pointer-events: none;
+}
+
+button.is-loading:disabled,
+.file-button.is-loading {
+  opacity: 1;
+}
+
+.is-loading .button-icon {
+  display: none;
+}
+
+.is-loading::before {
+  content: "";
+  width: 15px;
+  height: 15px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 999px;
+  animation: spin 750ms linear infinite;
+}
+
 .primary-button {
   border-color: var(--accent);
   background: var(--accent);
@@ -254,10 +331,27 @@ small {
   box-shadow: 0 10px 24px rgba(78, 124, 15, 0.2);
 }
 
+.optional-button {
+  border-style: dashed;
+  color: var(--muted);
+}
+
 .primary-button:hover:not(:disabled) {
   border-color: var(--accent-dark);
   background: var(--accent-dark);
   color: white;
+}
+
+.mapping-button {
+  border-color: #cbe8b1;
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+}
+
+.mapping-button:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: #dcf4c4;
+  color: var(--accent-dark);
 }
 
 .status-panel {
@@ -284,8 +378,18 @@ small {
   color: var(--accent-dark);
 }
 
+.status-list li[data-state="pending"] {
+  color: var(--accent-dark);
+}
+
 .status-list li[data-state="error"] {
   color: var(--danger);
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .workspace {

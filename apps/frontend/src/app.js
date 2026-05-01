@@ -14,6 +14,7 @@ const state = {
   figures: [],
   activeTab: "overview",
   statuses: [],
+  busyAction: null,
 };
 
 const elements = {
@@ -24,6 +25,7 @@ const elements = {
   apiBaseUrl: document.querySelector("#apiBaseUrl"),
   mappingApiUrl: document.querySelector("#mappingApiUrl"),
   extractBtn: document.querySelector("#extractBtn"),
+  uploadBtn: document.querySelector("#uploadBtn"),
   mapBtn: document.querySelector("#mapBtn"),
   downloadBtn: document.querySelector("#downloadBtn"),
   statusList: document.querySelector("#statusList"),
@@ -89,10 +91,23 @@ function apiUrl(path) {
   return `${state.apiBaseUrl.replace(/\/$/, "")}${path}`;
 }
 
-function setBusy(isBusy) {
+function setBusy(action = null) {
+  state.busyAction = action;
+  updateControls();
+}
+
+function updateControls() {
+  const isBusy = Boolean(state.busyAction);
   elements.extractBtn.disabled = isBusy || !state.file;
+  elements.jsonInput.disabled = isBusy;
+  elements.uploadBtn.classList.toggle("is-disabled", isBusy);
+  elements.uploadBtn.classList.toggle("is-loading", state.busyAction === "upload");
+  elements.uploadBtn.setAttribute("aria-disabled", String(isBusy));
   elements.mapBtn.disabled = isBusy || !canMap();
   elements.downloadBtn.disabled = isBusy || !hasResults();
+  elements.extractBtn.classList.toggle("is-loading", state.busyAction === "extract");
+  elements.mapBtn.classList.toggle("is-loading", state.busyAction === "mapping");
+  elements.downloadBtn.classList.remove("is-loading");
 }
 
 function hasResults() {
@@ -156,7 +171,7 @@ async function fetchFigures(paperId) {
 async function runExtraction() {
   if (!state.file) return;
 
-  setBusy(true);
+  setBusy("extract");
   state.equations = [];
   state.figures = [];
   state.paper = { filename: state.file.name };
@@ -185,13 +200,13 @@ async function runExtraction() {
   } catch (error) {
     addStatus(error.message, "error");
   } finally {
-    setBusy(false);
+    setBusy(null);
   }
 }
 
 async function runMapping() {
   if (!canMap()) return;
-  setBusy(true);
+  setBusy("mapping");
   addStatus("Requesting code-location mapping", "pending");
 
   const payload = buildOutputJson();
@@ -222,7 +237,7 @@ async function runMapping() {
   } catch (error) {
     addStatus(error.message, "error");
   } finally {
-    setBusy(false);
+    setBusy(null);
   }
 }
 
@@ -295,7 +310,7 @@ function render() {
   renderEquations();
   renderFigures();
   renderCodeMap();
-  setBusy(false);
+  updateControls();
 }
 
 function renderOverview() {
@@ -452,12 +467,12 @@ elements.pdfInput.addEventListener("change", (event) => {
   elements.fileMeta.textContent = state.file
     ? `${state.file.name} · ${(state.file.size / 1024 / 1024).toFixed(2)} MB`
     : "No file selected";
-  setBusy(false);
+  updateControls();
 });
 
 elements.repoUrl.addEventListener("input", (event) => {
   state.repoUrl = event.target.value;
-  setBusy(false);
+  updateControls();
 });
 
 elements.apiBaseUrl.addEventListener("input", (event) => {
@@ -468,15 +483,24 @@ elements.apiBaseUrl.addEventListener("input", (event) => {
 elements.mappingApiUrl.addEventListener("input", (event) => {
   state.mappingApiUrl = event.target.value || DEFAULT_MAPPING_API_URL;
   saveSettings();
-  setBusy(false);
+  updateControls();
 });
 
 elements.extractBtn.addEventListener("click", runExtraction);
 elements.mapBtn.addEventListener("click", runMapping);
 elements.downloadBtn.addEventListener("click", downloadJson);
-elements.jsonInput.addEventListener("change", (event) => {
+elements.jsonInput.addEventListener("change", async (event) => {
   const file = event.target.files?.[0];
-  if (file) loadJson(file).catch((error) => addStatus(error.message, "error"));
+  if (!file) return;
+  setBusy("upload");
+  try {
+    await loadJson(file);
+  } catch (error) {
+    addStatus(error.message, "error");
+  } finally {
+    event.target.value = "";
+    setBusy(null);
+  }
 });
 
 elements.tabs.forEach((tab) => {
