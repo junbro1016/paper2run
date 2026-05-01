@@ -77,6 +77,7 @@ const elements = {
   uploadBtn: document.querySelector("#uploadBtn"),
   mapBtn: document.querySelector("#mapBtn"),
   downloadBtn: document.querySelector("#downloadBtn"),
+  clearBtn: document.querySelector("#clearBtn"),
   statusList: document.querySelector("#statusList"),
   paperTitle: document.querySelector("#paperTitle"),
   equationCount: document.querySelector("#equationCount"),
@@ -154,6 +155,7 @@ function updateControls() {
   elements.uploadBtn.setAttribute("aria-disabled", String(isBusy));
   elements.mapBtn.disabled = isBusy || !canMap();
   elements.downloadBtn.disabled = isBusy || !hasResults();
+  elements.clearBtn.disabled = isBusy || !hasCurrentRun();
   elements.extractBtn.classList.toggle("is-loading", state.busyAction === "extract");
   elements.mapBtn.classList.toggle("is-loading", state.busyAction === "mapping");
   elements.downloadBtn.classList.remove("is-loading");
@@ -161,6 +163,10 @@ function updateControls() {
 
 function hasResults() {
   return state.equations.length > 0 || state.figures.length > 0;
+}
+
+function hasCurrentRun() {
+  return Boolean(state.file || state.paper || state.repoUrl.trim() || hasResults());
 }
 
 function canMap() {
@@ -583,13 +589,18 @@ function renderCodeLocationDetail(location) {
       <details class="code-disclosure">
         <summary>
           <span class="toggle-arrow" aria-hidden="true">›</span>
-          <span>
+          <span class="code-toggle-copy">
             <span class="code-symbol">${escapeHtml(location.symbol || "code location")}</span>
             <span class="code-path">${escapeHtml(location.path || "")}:${escapeHtml(location.line_start || "")}-${escapeHtml(location.line_end || "")}</span>
+            <span class="toggle-state" aria-hidden="true"></span>
           </span>
+          ${
+            location.url
+              ? `<a class="summary-source-link" href="${escapeHtml(location.url)}" target="_blank" rel="noreferrer" onclick="event.stopPropagation()">Open</a>`
+              : ""
+          }
         </summary>
         <div class="code-disclosure-body">
-          ${location.url ? `<a class="source-link" href="${escapeHtml(location.url)}" target="_blank" rel="noreferrer">Open in GitHub</a>` : ""}
           ${renderCodeSnippet(location)}
           ${location.relation ? `<p class="code-note">${escapeHtml(location.relation)}</p>` : ""}
           ${location.rationale ? `<p class="code-note">${escapeHtml(location.rationale)}</p>` : ""}
@@ -826,6 +837,22 @@ function activateTab(tabName) {
   document.querySelector(`#${tabName}View`).classList.add("is-active");
 }
 
+function clearCurrentRun() {
+  state.file = null;
+  state.repoUrl = "";
+  state.paper = null;
+  state.equations = [];
+  state.figures = [];
+  state.codeSnippets = {};
+  elements.pdfInput.value = "";
+  elements.jsonInput.value = "";
+  elements.repoUrl.value = "";
+  elements.fileMeta.textContent = "No file selected";
+  activateTab("overview");
+  addStatus("Cleared current run", "done");
+  render();
+}
+
 elements.pdfInput.addEventListener("change", (event) => {
   state.file = event.target.files?.[0] || null;
   elements.fileMeta.textContent = state.file
@@ -853,6 +880,7 @@ elements.mappingApiUrl.addEventListener("input", (event) => {
 elements.extractBtn.addEventListener("click", runExtraction);
 elements.mapBtn.addEventListener("click", runMapping);
 elements.downloadBtn.addEventListener("click", downloadJson);
+elements.clearBtn.addEventListener("click", clearCurrentRun);
 elements.jsonInput.addEventListener("change", async (event) => {
   const file = event.target.files?.[0];
   if (!file) return;

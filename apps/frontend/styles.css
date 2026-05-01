@@ -436,6 +436,28 @@ button.is-loading:disabled,
   gap: 20px;
 }
 
+.clear-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  min-height: 38px;
+  padding: 0 12px;
+  border-color: #cbd8c5;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.clear-button:hover:not(:disabled) {
+  color: var(--danger);
+  border-color: #f2b8b5;
+  background: #fff8f7;
+}
+
 .eyebrow {
   font-size: 12px;
   font-weight: 800;
@@ -843,10 +865,10 @@ button.is-loading:disabled,
 
 .code-disclosure summary {
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
+  grid-template-columns: 24px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
+  gap: 10px;
+  padding: 11px 12px;
   cursor: pointer;
   list-style: none;
 }
@@ -856,16 +878,24 @@ button.is-loading:disabled,
 }
 
 .code-disclosure summary:hover {
-  background: #fbfef8;
+  background: #f7fcf1;
 }
 
 .code-disclosure[open] summary {
   border-bottom: 1px solid var(--line);
+  background: #f7fcf1;
 }
 
 .toggle-arrow {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid #cbe8b1;
+  border-radius: 999px;
+  background: var(--accent-soft);
   color: var(--accent-dark);
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 800;
   line-height: 1;
   transform: rotate(0deg);
@@ -874,6 +904,43 @@ button.is-loading:disabled,
 
 .code-disclosure[open] .toggle-arrow {
   transform: rotate(90deg);
+}
+
+.code-toggle-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.toggle-state {
+  color: var(--accent-dark);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.toggle-state::before {
+  content: "Show code";
+}
+
+.code-disclosure[open] .toggle-state::before {
+  content: "Hide code";
+}
+
+.summary-source-link {
+  padding: 5px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--accent-dark);
+  background: var(--surface);
+  font-size: 12px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.summary-source-link:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  text-decoration: underline;
 }
 
 .code-disclosure-body {
