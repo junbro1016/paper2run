@@ -419,7 +419,7 @@ function typesetMath() {
     return;
   }
 
-  const targets = [elements.overviewContent, elements.equationList];
+  const targets = [elements.overviewContent, elements.equationList, elements.codeMap];
   const runTypeset = () => {
     window.MathJax.typesetClear?.(targets);
     window.MathJax.typesetPromise?.(targets).catch((error) => {
@@ -492,8 +492,7 @@ function renderCodeMap() {
         return `
           <article class="map-row">
             <div class="map-node">
-              <strong>${escapeHtml(label)}</strong>
-              <p>${escapeHtml(item.description || item.caption || item.key_insight || type)}</p>
+              ${renderMappedComponent(type, label, item)}
             </div>
             <div class="map-arrow">→</div>
             <div class="map-node">
@@ -507,16 +506,48 @@ function renderCodeMap() {
   loadCodeSnippets();
 }
 
+function renderMappedComponent(type, label, item) {
+  if (type === "Equation") {
+    return `
+      <div class="mapped-component">
+        <strong>${escapeHtml(label)}</strong>
+        <div class="mapped-equation-math">${escapeHtml(formatLatexForDisplay(item.latex || ""))}</div>
+        <p>${escapeHtml(item.description || item.core_reason || item.section_hint || "Equation")}</p>
+      </div>
+    `;
+  }
+
+  const image = item.image_url
+    ? `<img src="${escapeHtml(item.image_url)}" alt="${escapeHtml(item.caption || "Mapped figure")}" />`
+    : `<div class="mapped-figure-placeholder">No image</div>`;
+
+  return `
+    <div class="mapped-component">
+      <strong>${escapeHtml(label)}</strong>
+      <div class="mapped-figure-preview">${image}</div>
+      <p>${escapeHtml(item.caption || item.key_insight || "Figure")}</p>
+    </div>
+  `;
+}
+
 function renderCodeLocationDetail(location) {
   return `
     <article class="code-location-detail">
-      <a class="code-link" href="${escapeHtml(location.url || "#")}" target="_blank" rel="noreferrer">
-        <span class="code-symbol">${escapeHtml(location.symbol || "code location")}</span>
-        <span class="code-path">${escapeHtml(location.path || "")}:${escapeHtml(location.line_start || "")}-${escapeHtml(location.line_end || "")}</span>
-      </a>
-      ${renderCodeSnippet(location)}
-      ${location.relation ? `<p class="code-note">${escapeHtml(location.relation)}</p>` : ""}
-      ${location.rationale ? `<p class="code-note">${escapeHtml(location.rationale)}</p>` : ""}
+      <details class="code-disclosure">
+        <summary>
+          <span class="toggle-arrow" aria-hidden="true">›</span>
+          <span>
+            <span class="code-symbol">${escapeHtml(location.symbol || "code location")}</span>
+            <span class="code-path">${escapeHtml(location.path || "")}:${escapeHtml(location.line_start || "")}-${escapeHtml(location.line_end || "")}</span>
+          </span>
+        </summary>
+        <div class="code-disclosure-body">
+          ${location.url ? `<a class="source-link" href="${escapeHtml(location.url)}" target="_blank" rel="noreferrer">Open in GitHub</a>` : ""}
+          ${renderCodeSnippet(location)}
+          ${location.relation ? `<p class="code-note">${escapeHtml(location.relation)}</p>` : ""}
+          ${location.rationale ? `<p class="code-note">${escapeHtml(location.rationale)}</p>` : ""}
+        </div>
+      </details>
     </article>
   `;
 }
@@ -555,6 +586,7 @@ function loadCodeSnippets() {
 
   Promise.allSettled(pending.map(loadCodeSnippet)).then(() => {
     renderCodeMap();
+    typesetMath();
   });
 }
 

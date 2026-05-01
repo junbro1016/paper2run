@@ -779,6 +779,50 @@ button.is-loading:disabled,
   min-width: 0;
 }
 
+.mapped-component {
+  display: grid;
+  gap: 10px;
+}
+
+.mapped-component p {
+  margin: 0;
+}
+
+.mapped-equation-math {
+  min-width: 0;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 10px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.mapped-equation-math mjx-container {
+  margin: 0;
+  min-width: max-content;
+}
+
+.mapped-figure-preview img,
+.mapped-figure-placeholder {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: #edf5e8;
+}
+
+.mapped-figure-preview img {
+  object-fit: contain;
+}
+
+.mapped-figure-placeholder {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .code-location-detail {
   display: grid;
   gap: 8px;
@@ -788,6 +832,66 @@ button.is-loading:disabled,
   margin-top: 12px;
   padding-top: 12px;
   border-top: 1px solid var(--line);
+}
+
+.code-disclosure {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.code-disclosure summary {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.code-disclosure summary::-webkit-details-marker {
+  display: none;
+}
+
+.code-disclosure summary:hover {
+  background: #fbfef8;
+}
+
+.code-disclosure[open] summary {
+  border-bottom: 1px solid var(--line);
+}
+
+.toggle-arrow {
+  color: var(--accent-dark);
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1;
+  transform: rotate(0deg);
+  transition: transform 160ms ease;
+}
+
+.code-disclosure[open] .toggle-arrow {
+  transform: rotate(90deg);
+}
+
+.code-disclosure-body {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px 12px;
+}
+
+.source-link {
+  justify-self: start;
+  color: var(--accent-dark);
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.source-link:hover {
+  text-decoration: underline;
 }
 
 .code-snippet {

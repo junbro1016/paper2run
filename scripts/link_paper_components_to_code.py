@@ -431,7 +431,7 @@ def call_openai_mapping(
     max_retries: int,
 ) -> dict[str, Any]:
     system_prompt = (
-        "You map machine learning paper components to implementation locations in a GitHub repo. "
+        "You should map machine learning / AI paper components to implementation locations in a GitHub repo. "
         "Use only the provided candidate snippets. Do not invent files or line numbers. "
         "Choose exact line ranges inside candidate snippets where the concept is implemented. "
         "Return unmapped if none of the candidates plausibly implement the component."
@@ -453,7 +453,7 @@ def call_openai_mapping(
         "component": component,
         "candidate_snippets": candidate_payload,
         "instructions": [
-            "Return at most 4 code_locations.",
+            "Return code_locations.",
             "Every returned path must exactly match one candidate path.",
             "Every returned line range must be contained inside that candidate's line range.",
             "Prefer implementation lines over comments/tests unless tests are the only evidence.",
