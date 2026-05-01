@@ -4,3 +4,19 @@ __pycache__/
 .env
 .env.*
 .DS_Store
+
+# Local paper inputs and generated extraction outputs.
+*.pdf
+*_paper2run.json
+*_paper2run_with_code.json
+data/raw/*
+data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# Frontend/build artifacts for future app work.
+node_modules/
+dist/
+build/
+.next/
+coverage/
