@@ -14,7 +14,7 @@ This repository intentionally does not track specific paper PDFs or generated ex
 ```text
 .
 ├── apps/
-│   └── frontend/          # Reserved for a future frontend app
+│   └── frontend/          # Browser UI for extraction, mapping, and visualization
 ├── data/
 │   ├── raw/               # Local-only paper PDFs and source inputs
 │   └── processed/         # Local-only generated JSON outputs
@@ -34,6 +34,64 @@ This repository intentionally does not track specific paper PDFs or generated ex
 - `OPENAI_API_KEY` for code-location mapping
 
 The scripts use Python standard library modules only.
+
+## Frontend
+
+The frontend is a static browser app under `apps/frontend`. It calls the existing Paper2Run backend directly for extraction and supports an optional mapping API for code-location enrichment.
+
+Run it locally:
+
+```bash
+cd apps/frontend
+python3 -m http.server 5173
+```
+
+Then open:
+
+```text
+http://localhost:5173
+```
+
+The UI supports:
+
+- PDF upload
+- GitHub repository URL input
+- Paper2Run API base URL configuration
+- equation extraction through `POST /papers/extract`
+- figure extraction through `POST /papers/figures/extract`
+- polling through `GET /jobs/{job_id}`
+- equation/figure visualization
+- loading an already enriched JSON file
+- downloading the current result JSON
+- optional code mapping through a configurable Mapping API URL
+
+### Mapping API Contract
+
+The extraction backend described in `backend_description.pdf` does not expose code-location mapping. The frontend therefore treats mapping as a separate API integration point.
+
+When the `Mapping API` field is set, the frontend sends:
+
+```http
+POST <mapping-api-url>
+Content-Type: application/json
+```
+
+Request body:
+
+```json
+{
+  "filename": "paper.pdf",
+  "paper_id": "uuid",
+  "base_url": "https://paper2run-production.up.railway.app",
+  "github_repository": {
+    "url": "https://github.com/owner/repo"
+  },
+  "equations": [],
+  "figures": []
+}
+```
+
+The mapping API should return the same shape as the enriched `*_paper2run_with_code.json` files produced by `scripts/link_paper_components_to_code.py`, especially `equations[].code_locations` and `figures[].code_locations`.
 
 ## 1. Extract Equations and Figures
 

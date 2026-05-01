@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Paper2Run</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="sidebar" aria-label="Workflow controls">
+        <div class="brand">
+          <div class="brand-mark">P2R</div>
+          <div>
+            <h1>Paper2Run</h1>
+            <p>Paper components to code evidence</p>
+          </div>
+        </div>
+
+        <section class="control-group">
+          <label for="pdfInput">Paper PDF</label>
+          <input id="pdfInput" type="file" accept="application/pdf" />
+          <div id="fileMeta" class="meta-line">No file selected</div>
+        </section>
+
+        <section class="control-group">
+          <label for="repoUrl">GitHub repository</label>
+          <input
+            id="repoUrl"
+            type="url"
+            placeholder="https://github.com/owner/repo"
+            autocomplete="off"
+          />
+        </section>
+
+        <section class="control-group">
+          <label for="apiBaseUrl">Paper2Run API</label>
+          <input id="apiBaseUrl" type="url" />
+        </section>
+
+        <section class="control-group">
+          <label for="mappingApiUrl">Mapping API</label>
+          <input
+            id="mappingApiUrl"
+            type="url"
+            placeholder="Optional: https://.../map"
+            autocomplete="off"
+          />
+          <div class="meta-line">Expected to return the enriched JSON shape.</div>
+        </section>
+
+        <div class="button-grid">
+          <button id="extractBtn" class="primary-button" type="button">
+            <span aria-hidden="true">↥</span>
+            Extract
+          </button>
+          <button id="mapBtn" type="button" disabled>
+            <span aria-hidden="true">⌁</span>
+            Map
+          </button>
+          <button id="downloadBtn" type="button" disabled>
+            <span aria-hidden="true">⇩</span>
+            JSON
+          </button>
+          <label class="file-button" for="jsonInput">
+            <span aria-hidden="true">↧</span>
+            Load
+          </label>
+          <input id="jsonInput" class="visually-hidden" type="file" accept="application/json" />
+        </div>
+
+        <section class="status-panel" aria-live="polite">
+          <h2>Run Status</h2>
+          <ol id="statusList" class="status-list"></ol>
+        </section>
+      </aside>
+
+      <section class="workspace">
+        <header class="workspace-header">
+          <div>
+            <p class="eyebrow">Component Map</p>
+            <h2 id="paperTitle">Upload a paper to begin</h2>
+          </div>
+          <div class="summary-strip" aria-label="Extraction summary">
+            <div>
+              <span id="equationCount">0</span>
+              <small>Equations</small>
+            </div>
+            <div>
+              <span id="figureCount">0</span>
+              <small>Figures</small>
+            </div>
+            <div>
+              <span id="mappedCount">0</span>
+              <small>Mapped</small>
+            </div>
+          </div>
+        </header>
+
+        <nav class="tabs" aria-label="Result views">
+          <button class="tab is-active" type="button" data-tab="overview">Overview</button>
+          <button class="tab" type="button" data-tab="equations">Equations</button>
+          <button class="tab" type="button" data-tab="figures">Figures</button>
+          <button class="tab" type="button" data-tab="code">Code Map</button>
+        </nav>
+
+        <section id="overviewView" class="view is-active">
+          <div id="emptyState" class="empty-state">
+            <h3>Ready for extraction</h3>
+            <p>Select a PDF, enter the target GitHub repository, then run extraction. Mapping needs a mapping API endpoint because the extraction backend does not expose code-location mapping.</p>
+          </div>
+          <div id="overviewContent" class="overview-grid"></div>
+        </section>
+
+        <section id="equationsView" class="view">
+          <div id="equationList" class="component-list"></div>
+        </section>
+
+        <section id="figuresView" class="view">
+          <div id="figureList" class="figure-grid"></div>
+        </section>
+
+        <section id="codeView" class="view">
+          <div id="codeMap" class="code-map"></div>
+        </section>
+      </section>
+    </main>
+
+    <template id="locationTemplate">
+      <a class="code-link" target="_blank" rel="noreferrer">
+        <span class="code-symbol"></span>
+        <span class="code-path"></span>
+      </a>
+    </template>
+
+    <script type="module" src="./src/app.js"></script>
+  </body>
+</html>
