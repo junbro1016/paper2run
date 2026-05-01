@@ -1,0 +1,6 @@
+__pycache__/
+*.py[cod]
+.paper2code_repos/
+.env
+.env.*
+.DS_Store

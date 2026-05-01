@@ -1,0 +1,154 @@
+{
+  "source_pdf": "/Users/parkjunhyeong/Desktop/junhyeong/01. 서울대학교/02. 강의/12. 데이터사이언스 프로젝트/midterm/DDPM.pdf",
+  "filename": "DDPM.pdf",
+  "base_url": "https://paper2run-production.up.railway.app",
+  "paper_id": "381464b4-0ff8-413c-8014-82c01d2e0dd6",
+  "equation_job": {
+    "job_id": "2c08c30e-6926-4795-a638-28613af36088",
+    "status": "done",
+    "cached": false,
+    "paper_id": "381464b4-0ff8-413c-8014-82c01d2e0dd6",
+    "filename": "DDPM.pdf",
+    "total_equations": 8,
+    "error": null
+  },
+  "figure_job": {
+    "job_id": "edc23b00-159b-4446-84b3-4dadd8721fc4",
+    "status": "done",
+    "cached": false,
+    "paper_id": "381464b4-0ff8-413c-8014-82c01d2e0dd6",
+    "filename": "DDPM.pdf",
+    "total_equations": null,
+    "error": null
+  },
+  "equations": [
+    {
+      "id": "741d4936-6a62-4ff6-9777-5d36354b1e7f",
+      "eq_number": 1,
+      "keep_rank": 1,
+      "role": "model",
+      "importance_hint": "high",
+      "latex": "p_\\theta(x_{0:T}) := p(x_T)\\prod_{t=1}^{T} p_\\theta(x_{t-1}\\mid x_t),\\qquad p_\\theta(x_{t-1}\\mid x_t) := \\mathcal{N}\\!\\bigl(x_{t-1};\\mu_\\theta(x_t,t),\\Sigma_\\theta(x_t,t)\\bigr)",
+      "description": "Parameterization of the reverse diffusion Markov chain and its Gaussian transition kernel.",
+      "context": "The joint distribution \\(p_\\theta(x_{0:T})\\) is called the reverse process, and it is defined as a Markov chain with learned Gaussian transitions starting at \\(p(x_T)=\\mathcal{N}(x_T;0,I)\\).",
+      "core_reason": "This defines the learned generative reverse process that is the backbone of the diffusion model.",
+      "section_hint": "Background",
+      "page": 2
+    },
+    {
+      "id": "b5812db4-2e70-4ec2-b814-05493bb64bee",
+      "eq_number": 2,
+      "keep_rank": 2,
+      "role": "definition",
+      "importance_hint": "high",
+      "latex": "q(x_{1:T}\\mid x_0) := \\prod_{t=1}^{T} q(x_t\\mid x_{t-1}),\\qquad q(x_t\\mid x_{t-1}) := \\mathcal{N}\\!\\bigl(x_t;\\sqrt{1-\\beta_t}\\,x_{t-1},\\beta_t I\\bigr)",
+      "description": "Definition of the fixed forward diffusion process used to corrupt data with Gaussian noise.",
+      "context": "What distinguishes diffusion models from other types of latent variable models is that the approximate posterior \\(q(x_{1:T}\\mid x_0)\\), called the forward process or diffusion process, is fixed to a Markov chain that gradually adds Gaussian noise to the data according to a variance schedule \\(\\beta_1,\\ldots,\\beta_T\\).",
+      "core_reason": "This specifies the noising process needed to train and sample from the diffusion model.",
+      "section_hint": "Background",
+      "page": 2
+    },
+    {
+      "id": "e780a948-b76c-47ab-a98f-57007a8a0791",
+      "eq_number": 3,
+      "keep_rank": 3,
+      "role": "loss",
+      "importance_hint": "high",
+      "latex": "\\mathbb{E}\\bigl[-\\log p_\\theta(x_0)\\bigr] \\le \\mathbb{E}_q\\!\\left[-\\log \\frac{p_\\theta(x_{0:T})}{q(x_{1:T}\\mid x_0)}\\right] = \\mathbb{E}_q\\!\\left[-\\log p(x_T) - \\sum_{t\\ge 1} \\log \\frac{p_\\theta(x_{t-1}\\mid x_t)}{q(x_t\\mid x_{t-1})}\\right] = L",
+      "description": "Variational lower bound objective used for training diffusion models.",
+      "context": "Training is performed by optimizing the usual variational bound on negative log likelihood: \\(\\mathbb{E}[-\\log p_\\theta(x_0)] \\le \\mathbb{E}_q[-\\log \\frac{p_\\theta(x_{0:T})}{q(x_{1:T}\\mid x_0)}] = \\mathbb{E}_q[-\\log p(x_T) - \\sum_{t\\ge 1} \\log \\frac{p_\\theta(x_{t-1}\\mid x_t)}{q(x_t\\mid x_{t-1})}] = L\\).",
+      "core_reason": "This is the main training objective from which the method is optimized.",
+      "section_hint": "Background",
+      "page": 2
+    },
+    {
+      "id": "3d6b279e-ac8f-4144-bff4-30cd059113c3",
+      "eq_number": 4,
+      "keep_rank": 4,
+      "role": "definition",
+      "importance_hint": "medium",
+      "latex": "q(x_{t-1}\\mid x_t,x_0)=\\mathcal{N}\\big(x_{t-1};\\tilde{\\mu}_t(x_t,x_0),\\tilde{\\beta}_t I\\big)",
+      "description": "Closed-form Gaussian posterior of the forward diffusion process.",
+      "context": "Equation (5) uses KL divergence to directly compare p_\\theta(x_{t-1}\\mid x_t) against forward process posteriors, which are tractable when conditioned on x_0:",
+      "core_reason": "This posterior is required to derive the tractable training terms for the reverse process.",
+      "section_hint": "",
+      "page": 3
+    },
+    {
+      "id": "b02211d6-8af4-4fe2-819b-cd19e0c66eba",
+      "eq_number": 5,
+      "keep_rank": 5,
+      "role": "model",
+      "importance_hint": "high",
+      "latex": "\\mu_\\theta(x_t,t)=\\tilde\\mu_t\\!\\left(x_t,\\frac{1}{\\sqrt{\\alpha_t}}\\left(x_t-\\sqrt{1-\\bar\\alpha_t}\\,\\epsilon_\\theta(x_t,t)\\right)\\right)=\\frac{1}{\\sqrt{\\alpha_t}}\\left(x_t-\\frac{\\beta_t}{\\sqrt{1-\\bar\\alpha_t}}\\,\\epsilon_\\theta(x_t,t)\\right)",
+      "description": "Parameterization of the reverse-process mean in terms of the noise-prediction network.",
+      "context": "Equation (10) reveals that \\mu_\\theta must predict \\frac{1}{\\sqrt{\\alpha_t}}\\left(x_t-\\frac{\\beta_t}{\\sqrt{1-\\bar\\alpha_t}}\\epsilon\\right) given x_t. Since x_t is available as input to the model, we may choose the parameterization",
+      "core_reason": "This is the key modeling choice that turns the reverse mean into a noise-prediction network used by the method.",
+      "section_hint": "3.2 / Sampling",
+      "page": 4
+    },
+    {
+      "id": "c6ae4a32-a794-4119-86a1-58605c682b94",
+      "eq_number": 6,
+      "keep_rank": 6,
+      "role": "loss",
+      "importance_hint": "high",
+      "latex": "\\mathbb{E}_{x_0,\\epsilon}\\!\\left[\\frac{\\beta_t^2}{2\\sigma_t^2\\alpha_t(1-\\bar\\alpha_t)}\\,\\left\\|\\epsilon-\\epsilon_\\theta\\!\\left(\\sqrt{\\bar\\alpha_t}x_0+\\sqrt{1-\\bar\\alpha_t}\\,\\epsilon,t\\right)\\right\\|^2\\right]",
+      "description": "Simplified training objective resembling denoising score matching.",
+      "context": "Furthermore, with the parameterization (11), Eq. (10) simplifies to: which resembles denoising score matching over multiple noise scales indexed by t.",
+      "core_reason": "This is the practical loss used to train the noise-prediction network in the proposed method.",
+      "section_hint": "3.2 / Training",
+      "page": 4
+    },
+    {
+      "id": "26cd3462-5c07-4e7f-bb98-e5b0f2a7452b",
+      "eq_number": 7,
+      "keep_rank": 7,
+      "role": "inference",
+      "importance_hint": "medium",
+      "latex": "x_t \\sim p_\\theta(x_t\\mid x_{t+1})",
+      "description": "Learned reverse-process transition used to transmit intermediate latent variables in the sending algorithm.",
+      "context": "Algorithm 3 says to send x_t \\sim q(x_t\\mid x_{t+1},x_0) using p_\\theta(x_t\\mid x_{t+1}) for t=T-1,\\ldots,1. This specifies the model-based reverse step used for progressive transmission.",
+      "core_reason": "This is the core reverse sampling step used in the paper's progressive transmission/inference procedure.",
+      "section_hint": "Algorithm",
+      "page": 6
+    },
+    {
+      "id": "916f1175-d4ca-4ead-a31b-87980e045ade",
+      "eq_number": 8,
+      "keep_rank": 8,
+      "role": "inference",
+      "importance_hint": "medium",
+      "latex": "x_0 \\sim p_\\theta(x_0\\mid x_1)",
+      "description": "Final reverse-process step used to reconstruct the original sample from the last latent variable.",
+      "context": "Algorithm 3 ends with “Send x_0 using p_\\theta(x_0\\mid x_1),” and Algorithm 4 mirrors this with “return x_0.” This is the terminal inference step of the progressive coding scheme.",
+      "core_reason": "This final decoding step is necessary to reconstruct the data sample from the learned reverse chain.",
+      "section_hint": "Algorithm",
+      "page": 6
+    }
+  ],
+  "figures": [
+    {
+      "id": "670f6f26-89d2-42b5-b680-e3f181db6c6a",
+      "paper_id": "381464b4-0ff8-413c-8014-82c01d2e0dd6",
+      "fig_number": 1,
+      "figure_id": "fig2",
+      "page": 2,
+      "caption": "Figure 2: The directed graphical model considered in this work.",
+      "figure_type": "framework",
+      "page_bbox": [
+        0.23,
+        0.098,
+        0.769,
+        0.263
+      ],
+      "image_url": "https://yukwogsxsdqjobtnwfwe.supabase.co/storage/v1/object/public/figures/DDPM/fig2.jpg",
+      "key_insight": "The figure illustrates the diffusion process as a chain from noisy latent states x_T to clean data x_0 with forward and reverse transition distributions.",
+      "created_at": "2026-05-01T03:20:04.962044+00:00"
+    }
+  ],
+  "counts": {
+    "equations": 8,
+    "figures": 1
+  }
+}
