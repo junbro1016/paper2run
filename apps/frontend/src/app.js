@@ -15,6 +15,8 @@ const state = {
   activeTab: "overview",
   statuses: [],
   busyAction: null,
+  codeSnippets: {},
+  mathTypesetTimer: null,
 };
 
 const elements = {
@@ -174,6 +176,7 @@ async function runExtraction() {
   setBusy("extract");
   state.equations = [];
   state.figures = [];
+  state.codeSnippets = {};
   state.paper = { filename: state.file.name };
   render();
 
@@ -230,6 +233,7 @@ async function runMapping() {
       github_repository: mapped.github_repository || payload.github_repository,
       code_mapping_counts: mapped.code_mapping_counts,
     };
+    state.codeSnippets = {};
     state.equations = Array.isArray(mapped.equations) ? mapped.equations : state.equations;
     state.figures = Array.isArray(mapped.figures) ? mapped.figures : state.figures;
     addStatus("Code mapping complete", "done");
@@ -290,6 +294,7 @@ async function loadJson(file) {
   elements.repoUrl.value = state.repoUrl;
   state.equations = Array.isArray(data.equations) ? data.equations : [];
   state.figures = Array.isArray(data.figures) ? data.figures : [];
+  state.codeSnippets = {};
   addStatus(`Loaded ${file.name}`, "done");
   render();
 }
@@ -320,35 +325,42 @@ function renderOverview() {
     return;
   }
 
-  const topEquations = state.equations.slice(0, 4);
-  const topFigures = state.figures.slice(0, 3);
   elements.overviewContent.innerHTML = `
-    <section class="panel">
-      <h3>Core equations</h3>
-      ${topEquations.map(renderEquationSummary).join("") || "<p>No equations loaded.</p>"}
+    <section class="panel overview-section">
+      <h3>Equations</h3>
+      <div class="overview-list">
+        ${state.equations.map(renderEquationSummary).join("") || "<p>No equations loaded.</p>"}
+      </div>
     </section>
-    <section class="panel">
+    <section class="panel overview-section">
       <h3>Figures</h3>
-      ${topFigures.map(renderFigureSummary).join("") || "<p>No figures loaded.</p>"}
+      <div class="overview-figure-list">
+        ${state.figures.map(renderFigureSummary).join("") || "<p>No figures loaded.</p>"}
+      </div>
     </section>
   `;
 }
 
 function renderEquationSummary(equation) {
   return `
-    <article class="summary-item">
-      <p><strong>#${escapeHtml(equation.eq_number)}</strong> ${escapeHtml(equation.description || equation.section_hint || "Equation")}</p>
-      <div class="badge-row">
-        <span class="badge">${escapeHtml(equation.role || "unknown")}</span>
-        <span class="badge ${equation.importance_hint === "high" ? "high" : ""}">${escapeHtml(equation.importance_hint || "medium")}</span>
-      </div>
+    <article class="overview-equation">
+      <div class="overview-equation-math">${escapeHtml(formatLatexForDisplay(equation.latex || ""))}</div>
+      <p class="overview-one-line">
+        <strong>Equation ${escapeHtml(equation.eq_number)}</strong>
+        ${escapeHtml(equation.description || equation.core_reason || equation.section_hint || "No explanation available.")}
+      </p>
     </article>
   `;
 }
 
 function renderFigureSummary(figure) {
+  const image = figure.image_url
+    ? `<img src="${escapeHtml(figure.image_url)}" alt="${escapeHtml(figure.caption || "Extracted figure")}" />`
+    : `<div class="overview-figure-placeholder">No image</div>`;
+
   return `
-    <article class="summary-item">
+    <article class="overview-figure">
+      ${image}
       <p><strong>Figure ${escapeHtml(figure.fig_number)}</strong> ${escapeHtml(figure.caption || figure.key_insight || "Figure")}</p>
     </article>
   `;
@@ -401,10 +413,16 @@ function formatLatexForDisplay(value) {
 function typesetMath() {
   if (!window.MathJax) return;
 
-  const target = elements.equationList;
+  if (!window.MathJax.typesetPromise && !window.MathJax.startup?.promise) {
+    window.clearTimeout(state.mathTypesetTimer);
+    state.mathTypesetTimer = window.setTimeout(typesetMath, 100);
+    return;
+  }
+
+  const targets = [elements.overviewContent, elements.equationList];
   const runTypeset = () => {
-    window.MathJax.typesetClear?.([target]);
-    window.MathJax.typesetPromise?.([target]).catch((error) => {
+    window.MathJax.typesetClear?.(targets);
+    window.MathJax.typesetPromise?.(targets).catch((error) => {
       addStatus(`Equation rendering failed: ${error.message}`, "error");
     });
   };
@@ -471,7 +489,6 @@ function renderCodeMap() {
   elements.codeMap.innerHTML =
     mapped
       .map(({ type, label, item }) => {
-        const first = item.code_locations[0];
         return `
           <article class="map-row">
             <div class="map-node">
@@ -480,14 +497,149 @@ function renderCodeMap() {
             </div>
             <div class="map-arrow">→</div>
             <div class="map-node">
-              <strong>${escapeHtml(first.symbol || "code location")}</strong>
-              <p>${escapeHtml(first.path || "")}:${escapeHtml(first.line_start || "")}-${escapeHtml(first.line_end || "")}</p>
-              ${renderLocations(item.code_locations)}
+              ${item.code_locations.map(renderCodeLocationDetail).join("")}
             </div>
           </article>
         `;
       })
       .join("") || emptyMessage("No mapped code locations yet.");
+
+  loadCodeSnippets();
+}
+
+function renderCodeLocationDetail(location) {
+  return `
+    <article class="code-location-detail">
+      <a class="code-link" href="${escapeHtml(location.url || "#")}" target="_blank" rel="noreferrer">
+        <span class="code-symbol">${escapeHtml(location.symbol || "code location")}</span>
+        <span class="code-path">${escapeHtml(location.path || "")}:${escapeHtml(location.line_start || "")}-${escapeHtml(location.line_end || "")}</span>
+      </a>
+      ${renderCodeSnippet(location)}
+      ${location.relation ? `<p class="code-note">${escapeHtml(location.relation)}</p>` : ""}
+      ${location.rationale ? `<p class="code-note">${escapeHtml(location.rationale)}</p>` : ""}
+    </article>
+  `;
+}
+
+function renderCodeSnippet(location) {
+  if (!getRawCodeUrl(location)) {
+    return `<div class="snippet-message">No source URL available.</div>`;
+  }
+
+  const key = getLocationKey(location);
+  const snippet = state.codeSnippets[key];
+
+  if (snippet?.status === "done") {
+    return `<pre class="code-snippet"><code>${escapeHtml(snippet.code)}</code></pre>`;
+  }
+
+  if (snippet?.status === "error") {
+    return `<div class="snippet-message">Could not load code snippet.</div>`;
+  }
+
+  return `<div class="snippet-message">Loading code snippet...</div>`;
+}
+
+function loadCodeSnippets() {
+  const locations = getMappedLocations();
+  const pending = locations.filter((location) => {
+    const key = getLocationKey(location);
+    return getRawCodeUrl(location) && !state.codeSnippets[key];
+  });
+
+  if (!pending.length) return;
+
+  pending.forEach((location) => {
+    state.codeSnippets[getLocationKey(location)] = { status: "loading" };
+  });
+
+  Promise.allSettled(pending.map(loadCodeSnippet)).then(() => {
+    renderCodeMap();
+  });
+}
+
+async function loadCodeSnippet(location) {
+  const key = getLocationKey(location);
+
+  try {
+    const rawUrl = getRawCodeUrl(location);
+    if (!rawUrl) throw new Error("Missing GitHub source URL.");
+
+    const response = await fetch(rawUrl);
+    if (!response.ok) throw new Error(`Source fetch failed with HTTP ${response.status}`);
+
+    const text = await response.text();
+    state.codeSnippets[key] = {
+      status: "done",
+      ...extractCodeSnippet(text, location.line_start, location.line_end),
+    };
+  } catch (error) {
+    state.codeSnippets[key] = { status: "error", error: error.message };
+  }
+}
+
+function getMappedLocations() {
+  return [...state.equations, ...state.figures].flatMap((item) => item.code_locations || []);
+}
+
+function getLocationKey(location) {
+  return [
+    location.url,
+    location.repository,
+    location.commit,
+    location.path,
+    location.line_start,
+    location.line_end,
+    location.symbol,
+  ]
+    .filter(Boolean)
+    .join("|");
+}
+
+function getRawCodeUrl(location) {
+  if (location.url) {
+    try {
+      const parsed = new URL(location.url);
+      const parts = parsed.pathname.split("/").filter(Boolean);
+      if (parsed.hostname === "github.com" && parts[2] === "blob" && parts.length >= 5) {
+        const [owner, repo, , ref, ...pathParts] = parts;
+        return `https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${pathParts.join("/")}`;
+      }
+      if (parsed.hostname === "raw.githubusercontent.com") return parsed.href.split("#")[0];
+    } catch {
+      return "";
+    }
+  }
+
+  if (!location.repository || !location.commit || !location.path) return "";
+
+  try {
+    const parsed = new URL(location.repository);
+    const [owner, repo] = parsed.pathname.split("/").filter(Boolean);
+    if (!owner || !repo) return "";
+    return `https://raw.githubusercontent.com/${owner}/${repo}/${location.commit}/${location.path}`;
+  } catch {
+    return "";
+  }
+}
+
+function extractCodeSnippet(text, lineStart, lineEnd) {
+  const lines = text.split(/\r?\n/);
+  const startLine = Math.max(1, Number(lineStart) || 1);
+  const endLine = Math.max(startLine, Number(lineEnd) || startLine);
+  const displayStart = Math.max(1, startLine - 3);
+  const displayEnd = Math.min(lines.length, endLine + 3);
+  const width = String(displayEnd).length;
+  const code = lines
+    .slice(displayStart - 1, displayEnd)
+    .map((line, index) => {
+      const lineNumber = displayStart + index;
+      const marker = lineNumber >= startLine && lineNumber <= endLine ? ">" : " ";
+      return `${marker} ${String(lineNumber).padStart(width, " ")} | ${line}`;
+    })
+    .join("\n");
+
+  return { code, startLine: displayStart, endLine: displayEnd };
 }
 
 function emptyMessage(text) {
