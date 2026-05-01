@@ -310,6 +310,7 @@ function render() {
   renderEquations();
   renderFigures();
   renderCodeMap();
+  typesetMath();
   updateControls();
 }
 
@@ -369,12 +370,50 @@ function renderEquationCard(equation) {
           <span class="badge">page ${escapeHtml(equation.page || "-")}</span>
         </div>
       </div>
-      <pre class="latex">${escapeHtml(equation.latex || "")}</pre>
+      <div class="math-render">${escapeHtml(formatLatexForDisplay(equation.latex || ""))}</div>
       <p>${escapeHtml(equation.description || "")}</p>
       <p>${escapeHtml(equation.core_reason || "")}</p>
       ${renderLocations(equation.code_locations)}
     </article>
   `;
+}
+
+function formatLatexForDisplay(value) {
+  let latex = String(value || "").trim();
+  if (!latex) return "\\[\\]";
+
+  latex = latex
+    .replace(/^\\\[/, "")
+    .replace(/\\\]$/, "")
+    .replace(/^\\\(/, "")
+    .replace(/\\\)$/, "")
+    .replace(/^\$\$/, "")
+    .replace(/\$\$$/, "")
+    .replace(/^\$/, "")
+    .replace(/\$$/, "")
+    .replace(/^\\begin\{equation\*?\}/, "")
+    .replace(/\\end\{equation\*?\}$/, "")
+    .trim();
+
+  return `\\[${latex}\\]`;
+}
+
+function typesetMath() {
+  if (!window.MathJax) return;
+
+  const target = elements.equationList;
+  const runTypeset = () => {
+    window.MathJax.typesetClear?.([target]);
+    window.MathJax.typesetPromise?.([target]).catch((error) => {
+      addStatus(`Equation rendering failed: ${error.message}`, "error");
+    });
+  };
+
+  if (window.MathJax.startup?.promise) {
+    window.MathJax.startup.promise.then(runTypeset).catch(() => {});
+  } else {
+    runTypeset();
+  }
 }
 
 function renderFigures() {

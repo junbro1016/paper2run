@@ -38,7 +38,8 @@ body {
 
 button,
 input,
-.file-button {
+.file-button,
+.pdf-upload-button {
   font: inherit;
 }
 
@@ -58,7 +59,8 @@ button {
 }
 
 button:hover:not(:disabled),
-.file-button:hover {
+.file-button:hover,
+.pdf-upload-button:hover {
   border-color: #b7d99a;
   background: #fbfef8;
   box-shadow: 0 8px 20px rgba(78, 124, 15, 0.1);
@@ -67,7 +69,8 @@ button:hover:not(:disabled),
 
 button:focus-visible,
 input:focus-visible,
-.file-button:focus-visible {
+.file-button:focus-visible,
+.pdf-upload-button:focus-visible {
   outline: 3px solid rgba(120, 184, 42, 0.28);
   outline-offset: 2px;
 }
@@ -219,10 +222,10 @@ small {
   display: grid;
   gap: 12px;
   padding: 14px;
-  border: 1px solid #cfe4be;
+  border: 1px solid var(--line);
   border-radius: var(--radius-md);
-  background: linear-gradient(180deg, #fbfef8, #ffffff);
-  box-shadow: 0 12px 28px rgba(78, 124, 15, 0.07);
+  background: var(--surface);
+  box-shadow: none;
 }
 
 .workflow-step-secondary {
@@ -257,8 +260,13 @@ small {
   gap: 8px;
 }
 
+.workflow-step-secondary .action-row {
+  grid-template-columns: 1fr;
+}
+
 .action-row button,
-.file-button {
+.file-button,
+.pdf-upload-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -275,6 +283,11 @@ small {
   font-weight: 700;
   line-height: 1;
   white-space: nowrap;
+}
+
+.pdf-upload-button {
+  width: 100%;
+  background: linear-gradient(180deg, #ffffff, #f8fcf4);
 }
 
 .file-button.is-disabled {
@@ -334,6 +347,27 @@ button.is-loading:disabled,
 .optional-button {
   border-style: dashed;
   color: var(--muted);
+}
+
+.text-button {
+  justify-self: start;
+  min-height: auto;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.text-button:hover:not(:disabled) {
+  background: transparent;
+  box-shadow: none;
+  color: var(--accent-dark);
+  text-decoration: underline;
+  transform: none;
 }
 
 .primary-button:hover:not(:disabled) {
@@ -573,14 +607,19 @@ button.is-loading:disabled,
   border-color: #cbe8b1;
 }
 
-.latex {
-  background: #111827;
-  color: #f8fafc;
+.math-render {
+  background: #fbfef8;
+  color: var(--text);
+  border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   padding: 14px;
   overflow-x: auto;
-  font-family: "SFMono-Regular", Consolas, monospace;
-  line-height: 1.55;
+  line-height: 1.7;
+}
+
+.math-render mjx-container {
+  margin: 0;
+  min-width: max-content;
 }
 
 .location-list {
