@@ -1,6 +1,53 @@
 const DEFAULT_API_BASE_URL = "https://paper2run-production.up.railway.app";
 const DEFAULT_MAPPING_API_URL = "https://web-production-148e8.up.railway.app/map";
 const SETTINGS_STORAGE_KEY = "paper2run.frontend.settings";
+const CODE_KEYWORDS = new Set([
+  "and",
+  "as",
+  "async",
+  "await",
+  "break",
+  "case",
+  "catch",
+  "class",
+  "const",
+  "continue",
+  "def",
+  "default",
+  "elif",
+  "else",
+  "except",
+  "export",
+  "extends",
+  "false",
+  "finally",
+  "for",
+  "from",
+  "function",
+  "if",
+  "import",
+  "in",
+  "let",
+  "new",
+  "none",
+  "not",
+  "null",
+  "or",
+  "pass",
+  "raise",
+  "return",
+  "self",
+  "static",
+  "super",
+  "switch",
+  "this",
+  "throw",
+  "true",
+  "try",
+  "while",
+  "with",
+  "yield",
+]);
 
 const savedSettings = loadSavedSettings();
 
@@ -561,7 +608,7 @@ function renderCodeSnippet(location) {
   const snippet = state.codeSnippets[key];
 
   if (snippet?.status === "done") {
-    return `<pre class="code-snippet"><code>${escapeHtml(snippet.code)}</code></pre>`;
+    return renderHighlightedCodeSnippet(snippet);
   }
 
   if (snippet?.status === "error") {
@@ -662,16 +709,110 @@ function extractCodeSnippet(text, lineStart, lineEnd) {
   const displayStart = Math.max(1, startLine - 3);
   const displayEnd = Math.min(lines.length, endLine + 3);
   const width = String(displayEnd).length;
-  const code = lines
-    .slice(displayStart - 1, displayEnd)
-    .map((line, index) => {
+  const rows = lines.slice(displayStart - 1, displayEnd).map((line, index) => {
       const lineNumber = displayStart + index;
-      const marker = lineNumber >= startLine && lineNumber <= endLine ? ">" : " ";
-      return `${marker} ${String(lineNumber).padStart(width, " ")} | ${line}`;
-    })
+      return {
+        isMapped: lineNumber >= startLine && lineNumber <= endLine,
+        lineNumber,
+        lineNumberLabel: String(lineNumber).padStart(width, " "),
+        source: line,
+      };
+    });
+  const code = rows
+    .map((row) => `${row.isMapped ? ">" : " "} ${row.lineNumberLabel} | ${row.source}`)
     .join("\n");
 
-  return { code, startLine: displayStart, endLine: displayEnd };
+  return { code, rows, startLine: displayStart, endLine: displayEnd };
+}
+
+function renderHighlightedCodeSnippet(snippet) {
+  if (!Array.isArray(snippet.rows)) {
+    return `<pre class="code-snippet"><code>${escapeHtml(snippet.code || "")}</code></pre>`;
+  }
+
+  const lines = snippet.rows
+    .map(
+      (row) =>
+        `<span class="code-line ${row.isMapped ? "is-mapped" : ""}"><span class="code-marker">${
+          row.isMapped ? ">" : ""
+        }</span><span class="code-line-number">${escapeHtml(row.lineNumberLabel)}</span><span class="code-divider">|</span><span class="code-content">${highlightSourceCode(row.source)}</span></span>`,
+    )
+    .join("");
+
+  return `<pre class="code-snippet"><code>${lines}</code></pre>`;
+}
+
+function highlightSourceCode(source) {
+  let html = "";
+  let index = 0;
+  const value = String(source ?? "");
+
+  while (index < value.length) {
+    const char = value[index];
+    const next = value[index + 1];
+
+    if (char === "#" || (char === "/" && next === "/")) {
+      html += `<span class="token-comment">${escapeHtml(value.slice(index))}</span>`;
+      break;
+    }
+
+    if (char === '"' || char === "'" || char === "`") {
+      const quote = char;
+      let end = index + 1;
+      while (end < value.length) {
+        if (value[end] === "\\") {
+          end += 2;
+          continue;
+        }
+        if (value[end] === quote) {
+          end += 1;
+          break;
+        }
+        end += 1;
+      }
+      html += `<span class="token-string">${escapeHtml(value.slice(index, end))}</span>`;
+      index = end;
+      continue;
+    }
+
+    if (/\d/.test(char)) {
+      const match = value.slice(index).match(/^\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/);
+      if (match) {
+        html += `<span class="token-number">${escapeHtml(match[0])}</span>`;
+        index += match[0].length;
+        continue;
+      }
+    }
+
+    if (/[A-Za-z_$]/.test(char)) {
+      const match = value.slice(index).match(/^[A-Za-z_$][\w$]*/);
+      if (match) {
+        const word = match[0];
+        const rest = value.slice(index + word.length);
+        const nextNonSpace = rest.match(/\S/)?.[0];
+        if (CODE_KEYWORDS.has(word.toLowerCase())) {
+          html += `<span class="token-keyword">${escapeHtml(word)}</span>`;
+        } else if (nextNonSpace === "(") {
+          html += `<span class="token-function">${escapeHtml(word)}</span>`;
+        } else {
+          html += escapeHtml(word);
+        }
+        index += word.length;
+        continue;
+      }
+    }
+
+    if (/[{}()[\].,;:+\-*/%=<>!&|?]/.test(char)) {
+      html += `<span class="token-punctuation">${escapeHtml(char)}</span>`;
+      index += 1;
+      continue;
+    }
+
+    html += escapeHtml(char);
+    index += 1;
+  }
+
+  return html || " ";
 }
 
 function emptyMessage(text) {
