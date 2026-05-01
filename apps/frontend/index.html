@@ -43,10 +43,10 @@
           <input
             id="mappingApiUrl"
             type="url"
-            placeholder="http://127.0.0.1:8787/map"
+            placeholder="https://web-production-148e8.up.railway.app/map"
             autocomplete="off"
           />
-          <div class="meta-line">Expected to return the enriched JSON shape.</div>
+          <div class="meta-line">Defaults to the deployed Railway mapper.</div>
         </section>
 
         <div class="button-grid">
@@ -107,7 +107,7 @@
         <section id="overviewView" class="view is-active">
           <div id="emptyState" class="empty-state">
             <h3>Ready for extraction</h3>
-            <p>Select a PDF, enter the target GitHub repository, then run extraction. Mapping needs a mapping API endpoint because the extraction backend does not expose code-location mapping.</p>
+            <p>Select a PDF, enter the target GitHub repository, then run extraction and mapping.</p>
           </div>
           <div id="overviewContent" class="overview-grid"></div>
         </section>

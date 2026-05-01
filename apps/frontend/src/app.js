@@ -1,10 +1,14 @@
 const DEFAULT_API_BASE_URL = "https://paper2run-production.up.railway.app";
+const DEFAULT_MAPPING_API_URL = "https://web-production-148e8.up.railway.app/map";
+const SETTINGS_STORAGE_KEY = "paper2run.frontend.settings";
+
+const savedSettings = loadSavedSettings();
 
 const state = {
   file: null,
   repoUrl: "",
-  apiBaseUrl: DEFAULT_API_BASE_URL,
-  mappingApiUrl: "",
+  apiBaseUrl: savedSettings.apiBaseUrl || DEFAULT_API_BASE_URL,
+  mappingApiUrl: savedSettings.mappingApiUrl || DEFAULT_MAPPING_API_URL,
   paper: null,
   equations: [],
   figures: [],
@@ -35,7 +39,30 @@ const elements = {
   tabs: [...document.querySelectorAll(".tab")],
 };
 
-elements.apiBaseUrl.value = DEFAULT_API_BASE_URL;
+elements.apiBaseUrl.value = state.apiBaseUrl;
+elements.mappingApiUrl.value = state.mappingApiUrl;
+
+function loadSavedSettings() {
+  try {
+    return JSON.parse(window.localStorage.getItem(SETTINGS_STORAGE_KEY) || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function saveSettings() {
+  try {
+    window.localStorage.setItem(
+      SETTINGS_STORAGE_KEY,
+      JSON.stringify({
+        apiBaseUrl: state.apiBaseUrl,
+        mappingApiUrl: state.mappingApiUrl,
+      }),
+    );
+  } catch {
+    // The app still works when local storage is unavailable.
+  }
+}
 
 function addStatus(label, stateName = "pending") {
   state.statuses.unshift({ label, state: stateName, at: new Date().toLocaleTimeString() });
@@ -435,10 +462,12 @@ elements.repoUrl.addEventListener("input", (event) => {
 
 elements.apiBaseUrl.addEventListener("input", (event) => {
   state.apiBaseUrl = event.target.value || DEFAULT_API_BASE_URL;
+  saveSettings();
 });
 
 elements.mappingApiUrl.addEventListener("input", (event) => {
-  state.mappingApiUrl = event.target.value;
+  state.mappingApiUrl = event.target.value || DEFAULT_MAPPING_API_URL;
+  saveSettings();
   setBusy(false);
 });
 

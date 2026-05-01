@@ -14,7 +14,8 @@ This repository intentionally does not track specific paper PDFs or generated ex
 ```text
 .
 ├── apps/
-│   └── frontend/          # Browser UI for extraction, mapping, and visualization
+│   ├── frontend/          # Browser UI for extraction, mapping, and visualization
+│   └── mapping-api/       # Deployable HTTP wrapper for code-location mapping
 ├── data/
 │   ├── raw/               # Local-only paper PDFs and source inputs
 │   └── processed/         # Local-only generated JSON outputs
@@ -23,6 +24,8 @@ This repository intentionally does not track specific paper PDFs or generated ex
 ├── scripts/
 │   ├── extract_paper_json.py
 │   └── link_paper_components_to_code.py
+├── Dockerfile             # Mapping API container for Railway
+├── railway.json           # Railway healthcheck/build configuration
 └── README.md
 ```
 
@@ -33,11 +36,26 @@ This repository intentionally does not track specific paper PDFs or generated ex
 - Network access to Paper2Run and GitHub
 - `OPENAI_API_KEY` for code-location mapping
 
-The scripts use Python standard library modules only.
+The scripts and mapping API use Python standard library modules only.
+
+## Production Endpoints
+
+The frontend ships with these defaults:
+
+```text
+Paper2Run API: https://paper2run-production.up.railway.app
+Mapping API:   https://web-production-148e8.up.railway.app/map
+```
+
+The Mapping API healthcheck is:
+
+```text
+https://web-production-148e8.up.railway.app/health
+```
 
 ## Frontend
 
-The frontend is a static browser app under `apps/frontend`. It calls the existing Paper2Run backend directly for extraction and supports an optional mapping API for code-location enrichment.
+The frontend is a static browser app under `apps/frontend`. It calls the existing Paper2Run backend directly for extraction and the deployed Mapping API for code-location enrichment. API URL edits are stored in browser local storage so local overrides survive refreshes.
 
 Run it locally:
 
@@ -57,13 +75,25 @@ The UI supports:
 - PDF upload
 - GitHub repository URL input
 - Paper2Run API base URL configuration
+- Mapping API URL configuration with a deployed Railway default
 - equation extraction through `POST /papers/extract`
 - figure extraction through `POST /papers/figures/extract`
 - polling through `GET /jobs/{job_id}`
 - equation/figure visualization
 - loading an already enriched JSON file
 - downloading the current result JSON
-- optional code mapping through a configurable Mapping API URL
+- code mapping through a configurable Mapping API URL
+
+### Deploying the Frontend
+
+Deploy `apps/frontend` as a static Vercel project:
+
+1. Import this GitHub repository in Vercel.
+2. Set the Vercel project root directory to `apps/frontend`.
+3. Leave build and install commands empty.
+4. Deploy.
+
+`apps/frontend/vercel.json` enables clean static URLs. No frontend environment variables are required because the production Paper2Run and Mapping API URLs are defined in `apps/frontend/src/app.js`.
 
 ### Mapping API Contract
 
@@ -102,22 +132,24 @@ HOST=0.0.0.0
 PORT=<set by provider>
 ```
 
-On Railway or Render:
+On Railway:
 
 1. Create a new service from this GitHub repository.
 2. Set `OPENAI_API_KEY` in the service environment variables.
-3. Use the default start command from `Procfile`, or set:
+3. Keep the repository root as the service root so Railway can use the included `Dockerfile`.
+4. Confirm the healthcheck path is `/health`. `railway.json` already records this.
+5. Deploy.
+
+The active production Mapping API is:
+
+```text
+https://web-production-148e8.up.railway.app/map
+```
+
+For another provider, use the default start command from `Procfile`, or set:
 
 ```bash
 python3 apps/mapping-api/server.py --host 0.0.0.0
-```
-
-4. After deployment, use the deployed `/map` URL in the frontend's `Mapping API` field.
-
-Example:
-
-```text
-https://your-paper2run-mapping-api.up.railway.app/map
 ```
 
 When the `Mapping API` field is set, the frontend sends:
