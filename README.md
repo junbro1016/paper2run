@@ -69,6 +69,21 @@ The UI supports:
 
 The extraction backend described in `backend_description.pdf` does not expose code-location mapping. The frontend therefore treats mapping as a separate API integration point.
 
+For local development, run the included wrapper around `scripts/link_paper_components_to_code.py`:
+
+```bash
+export OPENAI_API_KEY="..."
+python3 apps/mapping-api/server.py
+```
+
+Then enter this URL in the frontend's `Mapping API` field:
+
+```text
+http://127.0.0.1:8787/map
+```
+
+After extraction completes and a GitHub repository URL is set, the `Map` button becomes available.
+
 When the `Mapping API` field is set, the frontend sends:
 
 ```http
