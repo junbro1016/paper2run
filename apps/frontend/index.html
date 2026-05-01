@@ -33,7 +33,7 @@
               <path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z" />
               <path d="M14 2v5h5" />
               <path d="M12 17V9" />
-              <path d="m8 13 4 4 4-4" />
+              <path d="m8 13 4-4 4 4" />
             </svg>
             Upload PDF
           </label>
@@ -115,6 +115,17 @@
               </button>
             </div>
           </div>
+
+          <button id="clearBtn" class="clear-button" type="button" disabled>
+            <svg class="button-icon" aria-hidden="true" viewBox="0 0 24 24">
+              <path d="M3 6h18" />
+              <path d="M8 6V4h8v2" />
+              <path d="M19 6 18 20H6L5 6" />
+              <path d="M10 11v5" />
+              <path d="M14 11v5" />
+            </svg>
+            Clear All
+          </button>
         </section>
 
         <section class="status-panel" aria-live="polite">
@@ -129,16 +140,6 @@
             <p class="eyebrow">Components & Mapping</p>
             <h2 id="paperTitle">Upload a paper to begin</h2>
           </div>
-          <button id="clearBtn" class="clear-button" type="button" disabled>
-            <svg class="button-icon" aria-hidden="true" viewBox="0 0 24 24">
-              <path d="M3 6h18" />
-              <path d="M8 6V4h8v2" />
-              <path d="M19 6 18 20H6L5 6" />
-              <path d="M10 11v5" />
-              <path d="M14 11v5" />
-            </svg>
-            Clear
-          </button>
           <div class="summary-strip" aria-label="Extraction summary">
             <div>
               <span id="equationCount">0</span>

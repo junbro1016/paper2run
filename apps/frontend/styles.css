@@ -441,9 +441,12 @@ button.is-loading:disabled,
   align-items: center;
   justify-content: center;
   gap: 6px;
-  flex: 0 0 auto;
-  min-height: 38px;
+  width: 100%;
+  min-height: 42px;
+  margin-top: 4px;
   padding: 0 12px;
+  border: 1px solid #cbd8c5;
+  border-radius: var(--radius-sm);
   border-color: #cbd8c5;
   background: var(--surface);
   color: var(--muted);
