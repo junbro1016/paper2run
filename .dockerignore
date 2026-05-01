@@ -1,0 +1,14 @@
+.git
+.claude
+.paper2code_repos
+__pycache__
+*.py[cod]
+.env
+.env.*
+.DS_Store
+data/raw/*
+data/processed/*
+node_modules
+dist
+build
+.next

@@ -84,6 +84,42 @@ http://127.0.0.1:8787/map
 
 After extraction completes and a GitHub repository URL is set, the `Map` button becomes available.
 
+### Deploying the Mapping API
+
+The mapping API can be deployed as a small Python service. The repository includes both a `Procfile` and a `Dockerfile`.
+
+Required environment variable:
+
+```text
+OPENAI_API_KEY
+```
+
+Optional environment variables:
+
+```text
+OPENAI_MODEL=auto
+HOST=0.0.0.0
+PORT=<set by provider>
+```
+
+On Railway or Render:
+
+1. Create a new service from this GitHub repository.
+2. Set `OPENAI_API_KEY` in the service environment variables.
+3. Use the default start command from `Procfile`, or set:
+
+```bash
+python3 apps/mapping-api/server.py --host 0.0.0.0
+```
+
+4. After deployment, use the deployed `/map` URL in the frontend's `Mapping API` field.
+
+Example:
+
+```text
+https://your-paper2run-mapping-api.up.railway.app/map
+```
+
 When the `Mapping API` field is set, the frontend sends:
 
 ```http

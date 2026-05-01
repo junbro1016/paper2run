@@ -21,6 +21,7 @@ import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -47,6 +48,16 @@ def cors_headers() -> dict[str, str]:
         "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type,Authorization",
     }
+
+
+def env_int(name: str, default: int) -> int:
+    value = os.environ.get(name)
+    if not value:
+        return default
+    try:
+        return int(value)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be an integer, got {value!r}") from exc
 
 
 def json_response(handler: BaseHTTPRequestHandler, status: int, payload: dict[str, Any]) -> None:
@@ -178,7 +189,21 @@ def make_handler(service: MappingService, max_body_bytes: int) -> type[BaseHTTPR
             self.end_headers()
 
         def do_GET(self) -> None:  # noqa: N802
-            if self.path == "/health":
+            path = urlparse(self.path).path
+            if path == "/":
+                json_response(
+                    self,
+                    200,
+                    {
+                        "service": "paper2run-mapping-api",
+                        "endpoints": {
+                            "health": "/health",
+                            "map": "/map",
+                        },
+                    },
+                )
+                return
+            if path == "/health":
                 json_response(
                     self,
                     200,
@@ -191,7 +216,8 @@ def make_handler(service: MappingService, max_body_bytes: int) -> type[BaseHTTPR
             json_response(self, 404, {"error": "Not found"})
 
         def do_POST(self) -> None:  # noqa: N802
-            if self.path != "/map":
+            path = urlparse(self.path).path
+            if path != "/map":
                 json_response(self, 404, {"error": "Not found"})
                 return
             try:
@@ -208,9 +234,9 @@ def make_handler(service: MappingService, max_body_bytes: int) -> type[BaseHTTPR
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run local Paper2Run mapping API.")
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8787)
+    parser = argparse.ArgumentParser(description="Run Paper2Run mapping API.")
+    parser.add_argument("--host", default=os.environ.get("HOST", "127.0.0.1"))
+    parser.add_argument("--port", type=int, default=env_int("PORT", 8787))
     parser.add_argument("--model", default=os.environ.get("OPENAI_MODEL", DEFAULT_MODEL))
     parser.add_argument("--api-key-env", default="OPENAI_API_KEY")
     parser.add_argument("--repo-cache", type=Path, default=REPO_ROOT / ".paper2code_repos")
