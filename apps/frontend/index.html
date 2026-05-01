@@ -51,21 +51,39 @@
 
         <div class="button-grid">
           <button id="extractBtn" class="primary-button" type="button">
-            <span aria-hidden="true">↥</span>
-            Extract JSON
+            <svg class="button-icon" aria-hidden="true" viewBox="0 0 24 24">
+              <path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z" />
+              <path d="M14 2v5h5" />
+              <circle cx="11" cy="13" r="3" />
+              <path d="m13.2 15.2 2.3 2.3" />
+            </svg>
+            Extract
           </button>
           <label class="file-button" for="jsonInput">
-            <span aria-hidden="true">↧</span>
-            Upload JSON
+            <svg class="button-icon" aria-hidden="true" viewBox="0 0 24 24">
+              <path d="M12 16V4" />
+              <path d="m7 9 5-5 5 5" />
+              <path d="M20 16v4H4v-4" />
+            </svg>
+            Upload
           </label>
           <input id="jsonInput" class="visually-hidden" type="file" accept="application/json" />
           <button id="mapBtn" type="button" disabled>
-            <span aria-hidden="true">⌁</span>
+            <svg class="button-icon" aria-hidden="true" viewBox="0 0 24 24">
+              <circle cx="6" cy="7" r="3" />
+              <circle cx="18" cy="17" r="3" />
+              <path d="M8.5 8.8 15.5 15.2" />
+              <path d="M9 17H5a3 3 0 0 1 0-6h14a3 3 0 0 0 0-6h-4" />
+            </svg>
             Map
           </button>
           <button id="downloadBtn" type="button" disabled>
-            <span aria-hidden="true">⇩</span>
-            Download JSON
+            <svg class="button-icon" aria-hidden="true" viewBox="0 0 24 24">
+              <path d="M12 4v12" />
+              <path d="m7 11 5 5 5-5" />
+              <path d="M20 20H4" />
+            </svg>
+            Download
           </button>
         </div>
 

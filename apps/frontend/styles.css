@@ -98,6 +98,10 @@ button:disabled {
   gap: 12px;
 }
 
+.brand > div:last-child {
+  min-width: 0;
+}
+
 .brand-mark {
   width: 48px;
   height: 48px;
@@ -122,6 +126,13 @@ button:disabled {
   font-size: 22px;
   line-height: 1.1;
   letter-spacing: 0;
+}
+
+.brand p {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.2;
+  white-space: nowrap;
 }
 
 .brand p,
@@ -210,15 +221,30 @@ small {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 6px;
   min-height: 42px;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
+  padding: 0 10px;
   text-decoration: none;
   color: var(--text);
   background: var(--surface);
   cursor: pointer;
+  font-size: 13px;
   font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.button-icon {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
 }
 
 .primary-button {
