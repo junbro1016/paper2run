@@ -1,0 +1,1068 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P4DS · Paper2Run Pipeline</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,800&display=swap">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css">
+<style>
+  :root {
+    --bg: #0c0d0a;
+    --bg-elev: #14150f;
+    --bg-card: #181a14;
+    --ink: #e8e6dc;
+    --ink-mute: #8a8a7e;
+    --ink-faint: #4a4a44;
+    --rule: #2a2a23;
+    --accent: #c7f257;
+    --accent-warm: #f2a857;
+    --accent-cool: #7ad9ff;
+    --red: #ff6b5a;
+    --serif: 'Fraunces', 'Pretendard', serif;
+    --sans: 'Pretendard', -apple-system, sans-serif;
+    --mono: 'JetBrains Mono', ui-monospace, monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+    background-image:
+      radial-gradient(ellipse 80% 50% at 50% -10%, rgba(199, 242, 87, 0.06), transparent),
+      radial-gradient(ellipse 60% 40% at 90% 30%, rgba(122, 217, 255, 0.03), transparent);
+    background-attachment: fixed;
+  }
+
+  /* Grain overlay */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/></filter><rect width='200' height='200' filter='url(%23n)' opacity='0.4'/></svg>");
+    opacity: 0.025;
+    pointer-events: none;
+    z-index: 100;
+    mix-blend-mode: overlay;
+  }
+
+  .container {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 0 32px;
+  }
+
+  /* ── HEADER ── */
+  header {
+    border-bottom: 1px solid var(--rule);
+    padding: 28px 0;
+    position: sticky; top: 0;
+    background: rgba(12, 13, 10, 0.85);
+    backdrop-filter: blur(20px);
+    z-index: 50;
+  }
+  .header-inner {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 24px;
+  }
+  .brand {
+    font-family: var(--mono);
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+  }
+  .brand .dot {
+    display: inline-block;
+    width: 8px; height: 8px;
+    background: var(--accent);
+    border-radius: 50%;
+    margin-right: 10px;
+    transform: translateY(-1px);
+  }
+  .meta {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-faint);
+    letter-spacing: 0.05em;
+  }
+
+  /* ── HERO ── */
+  .hero {
+    padding: 100px 0 80px;
+    border-bottom: 1px solid var(--rule);
+    position: relative;
+  }
+  .hero .eyebrow {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--accent);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    margin-bottom: 24px;
+  }
+  .hero h1 {
+    font-family: var(--serif);
+    font-weight: 600;
+    font-size: clamp(48px, 7vw, 96px);
+    line-height: 0.98;
+    letter-spacing: -0.02em;
+    margin-bottom: 32px;
+    font-style: italic;
+  }
+  .hero h1 .accent {
+    color: var(--accent);
+    font-style: normal;
+    font-weight: 800;
+  }
+  .hero .lede {
+    font-family: var(--serif);
+    font-size: 21px;
+    line-height: 1.55;
+    color: var(--ink-mute);
+    max-width: 720px;
+    font-weight: 400;
+  }
+  .hero-meta {
+    margin-top: 56px;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 32px;
+    padding-top: 32px;
+    border-top: 1px solid var(--rule);
+  }
+  .hero-meta .item .label {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--ink-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 8px;
+  }
+  .hero-meta .item .value {
+    font-family: var(--mono);
+    font-size: 14px;
+    color: var(--ink);
+  }
+
+  /* ── TOC ── */
+  .toc {
+    padding: 40px 0;
+    border-bottom: 1px solid var(--rule);
+  }
+  .toc-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+  }
+  .toc-item {
+    background: var(--bg);
+    padding: 24px 20px;
+    text-decoration: none;
+    color: var(--ink);
+    transition: background 0.2s;
+    display: flex; flex-direction: column;
+    gap: 8px;
+  }
+  .toc-item:hover {
+    background: var(--bg-elev);
+  }
+  .toc-item:hover .toc-num { color: var(--accent); }
+  .toc-num {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-faint);
+    letter-spacing: 0.05em;
+    transition: color 0.2s;
+  }
+  .toc-label {
+    font-size: 13px;
+    line-height: 1.3;
+  }
+
+  /* ── SECTION ── */
+  section.chapter {
+    padding: 96px 0;
+    border-bottom: 1px solid var(--rule);
+  }
+  .chapter-head {
+    display: grid;
+    grid-template-columns: 120px 1fr;
+    gap: 40px;
+    margin-bottom: 64px;
+    align-items: start;
+  }
+  .chapter-num {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    padding-top: 12px;
+    border-top: 1px solid var(--accent);
+  }
+  .chapter-title {
+    font-family: var(--serif);
+    font-size: 44px;
+    font-weight: 600;
+    line-height: 1.05;
+    letter-spacing: -0.015em;
+  }
+  .chapter-title .ko {
+    font-family: var(--sans);
+    font-weight: 700;
+  }
+  .chapter-intro {
+    margin-top: 16px;
+    font-size: 16px;
+    color: var(--ink-mute);
+    max-width: 680px;
+    line-height: 1.7;
+  }
+
+  /* ── PIPELINE STEPS ── */
+  .pipeline {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    margin-left: 160px;
+  }
+  .step {
+    position: relative;
+    padding: 32px 32px 32px 80px;
+    background: var(--bg-card);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    margin-bottom: 24px;
+    transition: border-color 0.3s;
+  }
+  .step:hover { border-color: var(--accent); }
+  .step .step-num {
+    position: absolute;
+    left: 28px; top: 32px;
+    font-family: var(--mono);
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--accent);
+    width: 36px;
+    text-align: right;
+  }
+  .step-num::before {
+    content: '';
+    position: absolute;
+    left: 4px; top: 8px;
+    width: 6px; height: 6px;
+    background: var(--accent);
+    border-radius: 50%;
+  }
+  .step-title {
+    font-family: var(--serif);
+    font-size: 22px;
+    font-weight: 600;
+    margin-bottom: 6px;
+    line-height: 1.3;
+  }
+  .step-fn {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ink-mute);
+    margin-bottom: 16px;
+    word-break: break-all;
+  }
+  .step-body {
+    color: var(--ink);
+    font-size: 14px;
+    line-height: 1.7;
+  }
+  .step-body ul {
+    list-style: none;
+    margin-top: 8px;
+  }
+  .step-body li {
+    padding: 4px 0;
+    padding-left: 20px;
+    position: relative;
+    color: var(--ink);
+  }
+  .step-body li::before {
+    content: '→';
+    position: absolute;
+    left: 0;
+    color: var(--accent);
+    font-family: var(--mono);
+  }
+  .step-body code,
+  code.inline {
+    font-family: var(--mono);
+    font-size: 12px;
+    background: rgba(199, 242, 87, 0.08);
+    color: var(--accent);
+    padding: 2px 6px;
+    border-radius: 3px;
+    border: 1px solid rgba(199, 242, 87, 0.15);
+  }
+  /* arrow between steps */
+  .step::after {
+    content: '↓';
+    position: absolute;
+    left: -42px;
+    bottom: -32px;
+    color: var(--ink-faint);
+    font-family: var(--mono);
+    font-size: 18px;
+    z-index: 2;
+  }
+  .step:last-child::after { display: none; }
+
+  .step.terminal {
+    background: linear-gradient(135deg, rgba(199, 242, 87, 0.06), transparent);
+    border-color: rgba(199, 242, 87, 0.3);
+  }
+
+  /* sub-block (e.g., pass labels) */
+  .sub-tag {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    background: rgba(242, 168, 87, 0.1);
+    color: var(--accent-warm);
+    border: 1px solid rgba(242, 168, 87, 0.2);
+    border-radius: 3px;
+    margin-bottom: 8px;
+  }
+
+  /* ── LANGGRAPH FLOW ── */
+  .langgraph {
+    margin-left: 160px;
+    background: var(--bg-card);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    padding: 48px;
+    position: relative;
+  }
+  .lg-row {
+    display: flex;
+    gap: 16px;
+    align-items: stretch;
+    margin-bottom: 32px;
+  }
+  .lg-row:last-child { margin-bottom: 0; }
+  .lg-node {
+    flex: 1;
+    background: var(--bg);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 20px;
+    position: relative;
+    transition: all 0.2s;
+  }
+  .lg-node:hover {
+    border-color: var(--accent);
+    transform: translateY(-2px);
+  }
+  .lg-node.dispatch {
+    flex: 2;
+    background: linear-gradient(180deg, rgba(199, 242, 87, 0.04), transparent);
+  }
+  .lg-node-name {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--accent);
+    margin-bottom: 8px;
+  }
+  .lg-node-desc {
+    font-size: 13px;
+    color: var(--ink-mute);
+    line-height: 1.5;
+  }
+  .lg-arrow-down {
+    text-align: center;
+    color: var(--ink-faint);
+    font-family: var(--mono);
+    font-size: 16px;
+    line-height: 1;
+    margin: -16px 0 16px;
+  }
+  .lg-children {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    margin-top: 16px;
+  }
+  .lg-child {
+    background: var(--bg-elev);
+    padding: 10px 12px;
+    border-radius: 3px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink);
+    border: 1px solid var(--rule);
+  }
+  .lg-loop {
+    margin-top: 24px;
+    padding: 16px 20px;
+    background: rgba(242, 168, 87, 0.06);
+    border: 1px dashed rgba(242, 168, 87, 0.3);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 13px;
+    color: var(--accent-warm);
+  }
+  .lg-loop code {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent-warm);
+    background: transparent;
+    border: none;
+    padding: 0;
+  }
+
+  /* ── DATAFLOW ── */
+  .dataflow {
+    margin-left: 160px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+  }
+  .df-box {
+    background: var(--bg-card);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    padding: 24px;
+    position: relative;
+  }
+  .df-box-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin-bottom: 12px;
+  }
+  .df-box-title {
+    font-family: var(--serif);
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 12px;
+  }
+  .df-box-list {
+    list-style: none;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ink-mute);
+  }
+  .df-box-list li {
+    padding: 4px 0;
+    border-bottom: 1px dashed var(--rule);
+  }
+  .df-box-list li:last-child { border-bottom: none; }
+
+  /* ── STABILITY TABLE ── */
+  .stability {
+    margin-left: 160px;
+  }
+  .stab-row {
+    display: grid;
+    grid-template-columns: 180px 1fr;
+    gap: 32px;
+    padding: 24px 0;
+    border-bottom: 1px solid var(--rule);
+    align-items: start;
+  }
+  .stab-row:first-child {
+    border-top: 1px solid var(--rule);
+  }
+  .stab-area {
+    font-family: var(--mono);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    padding-top: 2px;
+  }
+  .stab-desc {
+    font-size: 15px;
+    color: var(--ink);
+    line-height: 1.6;
+  }
+  .stab-desc code {
+    font-family: var(--mono);
+    font-size: 12px;
+    background: var(--bg-elev);
+    color: var(--accent);
+    padding: 2px 6px;
+    border-radius: 3px;
+  }
+
+  /* ── API TABLE ── */
+  .api-table {
+    margin-left: 160px;
+    background: var(--bg-card);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .api-row {
+    display: grid;
+    grid-template-columns: 80px 1fr 1fr;
+    gap: 24px;
+    padding: 18px 24px;
+    border-bottom: 1px solid var(--rule);
+    align-items: center;
+    transition: background 0.15s;
+  }
+  .api-row:hover { background: var(--bg-elev); }
+  .api-row:last-child { border-bottom: none; }
+  .api-row.header {
+    background: var(--bg);
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  .api-method {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 3px;
+    text-align: center;
+    width: fit-content;
+  }
+  .api-method.get { background: rgba(122, 217, 255, 0.12); color: var(--accent-cool); border: 1px solid rgba(122, 217, 255, 0.25); }
+  .api-method.post { background: rgba(199, 242, 87, 0.12); color: var(--accent); border: 1px solid rgba(199, 242, 87, 0.25); }
+  .api-path {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--ink);
+  }
+  .api-desc {
+    font-size: 13px;
+    color: var(--ink-mute);
+  }
+
+  /* ── FOOTER ── */
+  footer {
+    padding: 80px 0 60px;
+    text-align: center;
+    color: var(--ink-faint);
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.05em;
+  }
+  footer .divider {
+    width: 60px; height: 1px;
+    background: var(--rule);
+    margin: 0 auto 32px;
+  }
+
+  /* ── RESPONSIVE ── */
+  @media (max-width: 900px) {
+    .container { padding: 0 20px; }
+    .hero { padding: 64px 0 48px; }
+    .hero h1 { font-size: 44px; }
+    .hero .lede { font-size: 17px; }
+    .hero-meta { grid-template-columns: repeat(2, 1fr); gap: 20px; }
+    .chapter-head { grid-template-columns: 1fr; gap: 16px; margin-bottom: 40px; }
+    .chapter-title { font-size: 30px; }
+    section.chapter { padding: 64px 0; }
+    .toc-grid { grid-template-columns: repeat(2, 1fr); }
+    .pipeline, .langgraph, .dataflow, .stability, .api-table { margin-left: 0; }
+    .step { padding: 24px 20px 24px 60px; }
+    .step .step-num { left: 16px; top: 24px; }
+    .step::after { left: 24px; }
+    .langgraph { padding: 24px; }
+    .lg-row { flex-direction: column; }
+    .lg-children { grid-template-columns: repeat(2, 1fr); }
+    .dataflow { grid-template-columns: 1fr; }
+    .stab-row { grid-template-columns: 1fr; gap: 8px; }
+    .api-row { grid-template-columns: 60px 1fr; gap: 12px; }
+    .api-row .api-desc { grid-column: 1 / -1; }
+    .api-row.header .api-desc { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="container header-inner">
+    <div class="brand"><span class="dot"></span>P4DS · Paper2Run</div>
+    <div class="meta">v3.0.0 · documentation</div>
+  </div>
+</header>
+
+<!-- ── HERO ── -->
+<div class="hero">
+  <div class="container">
+    <div class="eyebrow">Pipeline Overview</div>
+    <h1>논문을<br>실행 가능한 <span class="accent">코드</span>로.</h1>
+    <p class="lede">PDF 한 편을 업로드하면 수식과 그림, 알고리즘을 추출하고 GitHub 저장소와 매칭해 검증하는 LangGraph 기반 풀파이프라인.</p>
+    <div class="hero-meta">
+      <div class="item">
+        <div class="label">Base URL</div>
+        <div class="value">paper2run.onrender.com</div>
+      </div>
+      <div class="item">
+        <div class="label">Vision Model</div>
+        <div class="value">gpt-5.4-mini</div>
+      </div>
+      <div class="item">
+        <div class="label">Backend</div>
+        <div class="value">FastAPI + Supabase</div>
+      </div>
+      <div class="item">
+        <div class="label">Orchestration</div>
+        <div class="value">LangGraph</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── TOC ── -->
+<div class="toc">
+  <div class="container">
+    <div class="toc-grid">
+      <a href="#entry" class="toc-item">
+        <span class="toc-num">01</span>
+        <span class="toc-label">진입점 &amp; 캐싱</span>
+      </a>
+      <a href="#equation" class="toc-item">
+        <span class="toc-num">02</span>
+        <span class="toc-label">수식 추출</span>
+      </a>
+      <a href="#figure" class="toc-item">
+        <span class="toc-num">03</span>
+        <span class="toc-label">그림 추출 2-Pass</span>
+      </a>
+      <a href="#paper2run" class="toc-item">
+        <span class="toc-num">04</span>
+        <span class="toc-label">Paper2Run 풀파이프라인</span>
+      </a>
+      <a href="#dataflow" class="toc-item">
+        <span class="toc-num">05</span>
+        <span class="toc-label">데이터 흐름</span>
+      </a>
+      <a href="#stability" class="toc-item">
+        <span class="toc-num">06</span>
+        <span class="toc-label">안정성 장치 &amp; API</span>
+      </a>
+    </div>
+  </div>
+</div>
+
+<!-- ── §1 ENTRY ── -->
+<section class="chapter" id="entry">
+  <div class="container">
+    <div class="chapter-head">
+      <div class="chapter-num">§ 01</div>
+      <div>
+        <h2 class="chapter-title">진입점과 <span class="ko">캐싱</span></h2>
+        <p class="chapter-intro">세 개의 엔드포인트로 시작한다. 모든 업로드는 SHA-256으로 해싱되어 동일 논문 재추출을 방지한다.</p>
+      </div>
+    </div>
+
+    <div class="pipeline">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-title">PDF 업로드</div>
+        <div class="step-fn">POST /papers/extract · /papers/figures/extract · /paper2run/run</div>
+        <div class="step-body">
+          세 개의 엔드포인트가 각각 <code>수식</code>, <code>그림</code>, <code>풀파이프라인</code> 작업을 트리거한다. 모두 동일하게 PDF 파일을 multipart로 받는다.
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-title">해시 기반 캐시 조회</div>
+        <div class="step-fn">find_cached_paper(filename, file_hash)</div>
+        <div class="step-body">
+          파일 내용의 SHA-256을 계산해 동일 논문이 이미 처리됐는지 확인. 파일명이 달라도 내용이 같으면 캐시 hit. <code>?force=true</code> 쿼리로 우회 가능.
+        </div>
+      </div>
+
+      <div class="step terminal">
+        <div class="step-num">3</div>
+        <div class="step-title">분기 — BackgroundTask 또는 즉시 반환</div>
+        <div class="step-body">
+          캐시 hit이면 <code>job done</code>으로 즉시 반환. 아니면 백그라운드 작업으로 진행하고 <code>job_id</code> 반환 — 클라이언트는 폴링으로 상태 확인.
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── §2 EQUATION ── -->
+<section class="chapter" id="equation">
+  <div class="container">
+    <div class="chapter-head">
+      <div class="chapter-num">§ 02</div>
+      <div>
+        <h2 class="chapter-title">수식 <span class="ko">추출</span></h2>
+        <p class="chapter-intro">Vision API로 페이지마다 후보 수식을 뽑고, 강화된 시그니처로 중복을 제거한 뒤 LLM으로 핵심만 3~8개로 압축한다.</p>
+      </div>
+    </div>
+
+    <div class="pipeline">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-title">PDF → 페이지 이미지 (generator)</div>
+        <div class="step-fn">pdf_to_images() · DPI=150</div>
+        <div class="step-body">
+          한 페이지씩 yield하고 Pixmap을 즉시 해제. 메모리를 1페이지분으로 유지해 Render 512MB 환경에서도 안전.
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-title">페이지별 수식 후보 추출</div>
+        <div class="step-fn">extract_equations_from_page() · Vision API</div>
+        <div class="step-body">
+          페이지당 최대 8개 후보. 시스템 프롬프트가 hallucination 금지, 표기 보존, 불확실 시 <code>?</code> 마킹을 강제한다. 출력 필드:
+          <ul>
+            <li><code>latex · equation_number · description · context</code></li>
+            <li><code>section_hint · is_display_equation · is_numbered</code></li>
+            <li><code>likely_background · confidence</code></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-title">강화 시그니처 중복 제거</div>
+        <div class="step-fn">dedup_equations()</div>
+        <div class="step-body">
+          <code>\begin{equation}</code> 래퍼, <code>\label</code>, <code>\tag</code>, <code>\left/\right</code>, <code>\mathcal{X}</code>를 정규화한 후 비교. 표기 다양성으로 인한 false split을 막는다.
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-title">핵심 수식 필터 — 2단 전략</div>
+        <div class="step-fn">filter_core_equations()</div>
+        <div class="step-body">
+          후보가 <code>≤ 30개</code>면 single LLM 호출, <code>&gt; 30개</code>면 batch 25개씩 1차 필터 → 최종 merge filter.
+          <ul>
+            <li>role 분류: <code>model · loss · update · inference · definition</code></li>
+            <li>importance_hint, core_reason, keep_rank를 함께 부여</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="step terminal">
+        <div class="step-num">5</div>
+        <div class="step-title">Supabase 저장 — 최종 3~8개</div>
+        <div class="step-fn">save_to_supabase()</div>
+        <div class="step-body">
+          <code>file_hash</code>로 기존 paper를 찾고 없으면 upsert. equations 테이블은 paper_id로 delete 후 insert.
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── §3 FIGURE ── -->
+<section class="chapter" id="figure">
+  <div class="container">
+    <div class="chapter-head">
+      <div class="chapter-num">§ 03</div>
+      <div>
+        <h2 class="chapter-title">그림 추출 <span class="ko">2-Pass</span></h2>
+        <p class="chapter-intro">먼저 후보를 다 모으고, 텍스트 메타데이터만으로 LLM에게 핵심을 고르게 한 뒤, 선택된 것만 고해상도로 정밀 크롭한다.</p>
+      </div>
+    </div>
+
+    <div class="pipeline">
+      <div class="step">
+        <span class="sub-tag">Pass 1 — 후보 수집</span>
+        <div class="step-num">1</div>
+        <div class="step-title">페이지별 figure 감지</div>
+        <div class="step-fn">detect_figures_on_page() · DPI=120 · Vision API</div>
+        <div class="step-body">
+          architecture / pipeline / process / conceptual 다이어그램만 수집. 테이블·샘플 그리드·loss 커브·ablation은 제외.
+          <ul>
+            <li>페이지당 최대 2개, <code>confidence ≥ 0.6</code></li>
+            <li>반환: <code>figure_body_bbox + caption_bbox + crop_bbox</code></li>
+            <li><code>_parse_fig_id(caption)</code>로 fig1, fig2 번호 파싱</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="step">
+        <span class="sub-tag">Pass 2 — LLM 선택</span>
+        <div class="step-num">2</div>
+        <div class="step-title">핵심 그림 선택 (텍스트만)</div>
+        <div class="step-fn">select_key_figures(title, candidates, max=3)</div>
+        <div class="step-body">
+          이미지를 전송하지 않고 메타데이터만 보냄 — 비용 절약. 우선순위:
+          <ul>
+            <li>① 메인 architecture 다이어그램</li>
+            <li>② 핵심 process diagram</li>
+            <li>③ 핵심 sub-component diagram</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="step">
+        <span class="sub-tag">Pass 3 — 고품질 크롭</span>
+        <div class="step-num">3</div>
+        <div class="step-title">정밀 bbox 크롭</div>
+        <div class="step-fn">high_res_crop() · DPI=250</div>
+        <div class="step-body">
+          좌·우·상단은 <code>crop_bbox</code>를 우선하되 body/caption bbox와 union해 LLM이 좁혀도 잘림을 막는다. 하단은 fitz로 텍스트 라인을 스캔해 캡션의 마지막 줄을 정확히 찾아낸다 — <code>_find_caption_bottom_pt()</code>.
+          <ul>
+            <li>"Figure N" / "Algorithm N" 패턴 매칭</li>
+            <li>Continuation 4중 검사: x-overlap, 줄 간격(line height × 1.6), section heading 경계, LLM cap_y1 + 15pt</li>
+            <li>여백: 좌·우·위 10pt, 아래 8pt</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="step terminal">
+        <div class="step-num">4</div>
+        <div class="step-title">Supabase Storage 업로드</div>
+        <div class="step-fn">upload_figure_to_storage() → save_figures_to_supabase()</div>
+        <div class="step-body">
+          크롭 실패 시 fallback으로 PDF 재렌더 후 저해상도 크롭 — 빈 이미지가 나오지 않도록 보장.
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── §4 PAPER2RUN ── -->
+<section class="chapter" id="paper2run">
+  <div class="container">
+    <div class="chapter-head">
+      <div class="chapter-num">§ 04</div>
+      <div>
+        <h2 class="chapter-title">Paper2Run <span class="ko">풀파이프라인</span></h2>
+        <p class="chapter-intro">LangGraph로 오케스트레이션되는 5단계. flagged 비율이 높으면 planner로 한 번 되돌아간다.</p>
+      </div>
+    </div>
+
+    <div class="langgraph">
+
+      <div class="lg-row">
+        <div class="lg-node">
+          <div class="lg-node-name">profiler</div>
+          <div class="lg-node-desc">pdf_text를 분석해 paper_type, difficulty 등 메타 프로파일 생성</div>
+        </div>
+      </div>
+      <div class="lg-arrow-down">↓</div>
+
+      <div class="lg-row">
+        <div class="lg-node">
+          <div class="lg-node-name">planner</div>
+          <div class="lg-node-desc">profile 기반으로 추출 계획 수립 — 어떤 extractor를 우선할지 결정</div>
+        </div>
+      </div>
+      <div class="lg-arrow-down">↓</div>
+
+      <div class="lg-row">
+        <div class="lg-node dispatch">
+          <div class="lg-node-name">extractor · dispatcher</div>
+          <div class="lg-node-desc">계획에 따라 4개 추출기로 분기 · 수식과 그림은 §2, §3 파이프라인 재사용</div>
+          <div class="lg-children">
+            <div class="lg-child">equation_extractor</div>
+            <div class="lg-child">figure_extractor</div>
+            <div class="lg-child">algorithm_extractor</div>
+            <div class="lg-child">command_extractor</div>
+          </div>
+        </div>
+      </div>
+      <div class="lg-arrow-down">↓</div>
+
+      <div class="lg-row">
+        <div class="lg-node">
+          <div class="lg-node-name">grounding</div>
+          <div class="lg-node-desc">추출물을 GitHub repo의 코드 청크와 매칭. <code class="inline">verification_status</code>: verified / weak / no_match / hallucinated</div>
+        </div>
+      </div>
+
+      <div class="lg-loop">
+        <span style="font-family: var(--mono); font-weight: 700;">↺</span>
+        <div>
+          flagged 비율이 <code>≥ 30%</code>이고 <code>replan &lt; 1</code>이면 planner로 회귀 — 최대 1회.
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ── §5 DATAFLOW ── -->
+<section class="chapter" id="dataflow">
+  <div class="container">
+    <div class="chapter-head">
+      <div class="chapter-num">§ 05</div>
+      <div>
+        <h2 class="chapter-title">데이터 <span class="ko">흐름</span></h2>
+        <p class="chapter-intro">클라이언트 → FastAPI → Vision API / PyMuPDF → Supabase. 동기적인 응답은 job_id만, 무거운 일은 백그라운드로.</p>
+      </div>
+    </div>
+
+    <div class="dataflow">
+      <div class="df-box">
+        <div class="df-box-label">CLIENT · WEB</div>
+        <div class="df-box-title">업로드 &amp; 폴링</div>
+        <ul class="df-box-list">
+          <li>multipart upload</li>
+          <li>받음 → job_id</li>
+          <li>5초 간격 폴링</li>
+          <li>done → 결과 조회</li>
+        </ul>
+      </div>
+
+      <div class="df-box">
+        <div class="df-box-label">API · FASTAPI</div>
+        <div class="df-box-title">오케스트레이션</div>
+        <ul class="df-box-list">
+          <li>SHA-256 해시</li>
+          <li>cache lookup</li>
+          <li>BackgroundTask</li>
+          <li>Vision API 호출</li>
+          <li>PyMuPDF 렌더링</li>
+        </ul>
+      </div>
+
+      <div class="df-box">
+        <div class="df-box-label">STORAGE · SUPABASE</div>
+        <div class="df-box-title">영속 계층</div>
+        <ul class="df-box-list">
+          <li>papers</li>
+          <li>equations</li>
+          <li>figures</li>
+          <li>storage/bucket</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── §6 STABILITY + API ── -->
+<section class="chapter" id="stability">
+  <div class="container">
+    <div class="chapter-head">
+      <div class="chapter-num">§ 06</div>
+      <div>
+        <h2 class="chapter-title">안정성 장치 &amp; <span class="ko">핵심 API</span></h2>
+        <p class="chapter-intro">제약된 환경(Render 512MB, free tier sleep)에서 견디기 위한 설계 결정과, 클라이언트가 알아야 할 핵심 엔드포인트.</p>
+      </div>
+    </div>
+
+    <div class="stability" style="margin-bottom: 64px;">
+      <div class="stab-row">
+        <div class="stab-area">Memory</div>
+        <div class="stab-desc"><code>pdf_to_images</code> generator + <code>pix=None</code> 즉시 해제로 Render 512MB OOM 방지.</div>
+      </div>
+      <div class="stab-row">
+        <div class="stab-area">중복 감지</div>
+        <div class="stab-desc">파일 내용 SHA-256 해시로 동일 논문 / 다른 파일명을 잡아낸다.</div>
+      </div>
+      <div class="stab-row">
+        <div class="stab-area">LaTeX dedup</div>
+        <div class="stab-desc">wrapper, label, tag, mathcal 정규화 시그니처로 표기 차이를 무시.</div>
+      </div>
+      <div class="stab-row">
+        <div class="stab-area">큰 후보셋</div>
+        <div class="stab-desc">30개 초과 시 batch 25개씩 1차 필터 → 최종 merge filter.</div>
+      </div>
+      <div class="stab-row">
+        <div class="stab-area">그림 크롭</div>
+        <div class="stab-desc">fitz line-level 캡션 탐색으로 본문 침범을 막는다.</div>
+      </div>
+      <div class="stab-row">
+        <div class="stab-area">잘림 방지</div>
+        <div class="stab-desc"><code>crop_bbox</code> + body/caption bbox union으로 LLM이 좁혀도 보정.</div>
+      </div>
+      <div class="stab-row">
+        <div class="stab-area">Fallback</div>
+        <div class="stab-desc">high_res_crop 실패 시 PDF 재렌더 후 저해상도 크롭 — 빈 이미지 없음.</div>
+      </div>
+      <div class="stab-row">
+        <div class="stab-area">캐시 우회</div>
+        <div class="stab-desc"><code>?force=true</code> 쿼리 파라미터로 강제 재추출.</div>
+      </div>
+    </div>
+
+    <div class="api-table">
+      <div class="api-row header">
+        <div>Method</div>
+        <div>Path</div>
+        <div class="api-desc">Description</div>
+      </div>
+      <div class="api-row">
+        <div class="api-method post">POST</div>
+        <div class="api-path">/papers/extract</div>
+        <div class="api-desc">수식 추출 시작 — job_id 반환</div>
+      </div>
+      <div class="api-row">
+        <div class="api-method post">POST</div>
+        <div class="api-path">/papers/figures/extract</div>
+        <div class="api-desc">그림 추출 시작 — 2-pass 비동기</div>
+      </div>
+      <div class="api-row">
+        <div class="api-method post">POST</div>
+        <div class="api-path">/paper2run/run</div>
+        <div class="api-desc">풀파이프라인 시작 — github_url 옵션</div>
+      </div>
+      <div class="api-row">
+        <div class="api-method get">GET</div>
+        <div class="api-path">/jobs/{job_id}</div>
+        <div class="api-desc">수식 / 그림 작업 상태 폴링</div>
+      </div>
+      <div class="api-row">
+        <div class="api-method get">GET</div>
+        <div class="api-path">/paper2run/jobs/{job_id}</div>
+        <div class="api-desc">파이프라인 상태 + 요약</div>
+      </div>
+      <div class="api-row">
+        <div class="api-method get">GET</div>
+        <div class="api-path">/paper2run/jobs/{job_id}/result</div>
+        <div class="api-desc">파이프라인 전체 결과 (full)</div>
+      </div>
+      <div class="api-row">
+        <div class="api-method get">GET</div>
+        <div class="api-path">/papers/{paper_id}/equations</div>
+        <div class="api-desc">저장된 수식 조회</div>
+      </div>
+      <div class="api-row">
+        <div class="api-method get">GET</div>
+        <div class="api-path">/papers/{paper_id}/figures</div>
+        <div class="api-desc">저장된 그림 조회 (image_url 포함)</div>
+      </div>
+    </div>
+
+    <p style="margin: 32px 0 0 160px; font-size: 13px; color: var(--ink-faint); font-family: var(--mono); line-height: 1.7;">
+      Note · Render free tier는 비활성 15분 후 sleep. 첫 요청은 ~50초 지연.<br>
+      UptimeRobot 핑으로 완화 중.
+    </p>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <div class="divider"></div>
+    P4DS · Paper2Run · documentation v3.0.0
+  </div>
+</footer>
+
+</body>
+</html>

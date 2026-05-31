@@ -1,98 +1,108 @@
 const DEFAULT_API_BASE_URL = "https://paper2run-production.up.railway.app";
-const DEFAULT_MAPPING_API_URL = "https://web-production-148e8.up.railway.app/map";
-const SETTINGS_STORAGE_KEY = "paper2run.frontend.settings";
-const CODE_KEYWORDS = new Set([
-  "and",
-  "as",
-  "async",
-  "await",
-  "break",
-  "case",
-  "catch",
-  "class",
-  "const",
-  "continue",
-  "def",
-  "default",
-  "elif",
-  "else",
-  "except",
-  "export",
-  "extends",
-  "false",
-  "finally",
-  "for",
-  "from",
-  "function",
-  "if",
-  "import",
-  "in",
-  "let",
-  "new",
-  "none",
-  "not",
-  "null",
-  "or",
-  "pass",
-  "raise",
-  "return",
-  "self",
-  "static",
-  "super",
-  "switch",
-  "this",
-  "throw",
-  "true",
-  "try",
-  "while",
-  "with",
-  "yield",
-]);
+const SETTINGS_STORAGE_KEY = "paper2run.pipeline.frontend.settings";
+const POLL_INTERVAL_MS = 3000;
 
 const savedSettings = loadSavedSettings();
 
 const state = {
   file: null,
-  repoUrl: "",
+  repoUrl: savedSettings.repoUrl || "",
   apiBaseUrl: savedSettings.apiBaseUrl || DEFAULT_API_BASE_URL,
-  mappingApiUrl: savedSettings.mappingApiUrl || DEFAULT_MAPPING_API_URL,
-  paper: null,
-  equations: [],
-  figures: [],
-  activeTab: "overview",
+  job: null,
+  result: null,
   statuses: [],
-  busyAction: null,
-  codeSnippets: {},
+  activeTab: "overview",
+  activeExtractionGroup: "equations",
+  flaggedOnly: false,
+  busy: false,
+  polling: false,
   mathTypesetTimer: null,
 };
 
 const elements = {
+  runForm: document.querySelector("#runForm"),
   pdfInput: document.querySelector("#pdfInput"),
-  jsonInput: document.querySelector("#jsonInput"),
+  fileName: document.querySelector("#fileName"),
   fileMeta: document.querySelector("#fileMeta"),
   repoUrl: document.querySelector("#repoUrl"),
   apiBaseUrl: document.querySelector("#apiBaseUrl"),
-  mappingApiUrl: document.querySelector("#mappingApiUrl"),
-  extractBtn: document.querySelector("#extractBtn"),
-  uploadBtn: document.querySelector("#uploadBtn"),
-  mapBtn: document.querySelector("#mapBtn"),
-  downloadBtn: document.querySelector("#downloadBtn"),
+  healthBtn: document.querySelector("#healthBtn"),
+  apiHealth: document.querySelector("#apiHealth"),
+  runBtn: document.querySelector("#runBtn"),
   clearBtn: document.querySelector("#clearBtn"),
+  jsonInput: document.querySelector("#jsonInput"),
+  downloadBtn: document.querySelector("#downloadBtn"),
+  jobState: document.querySelector("#jobState"),
+  jobMeta: document.querySelector("#jobMeta"),
+  scoreBar: document.querySelector("#scoreBar"),
   statusList: document.querySelector("#statusList"),
   paperTitle: document.querySelector("#paperTitle"),
-  equationCount: document.querySelector("#equationCount"),
-  figureCount: document.querySelector("#figureCount"),
-  mappedCount: document.querySelector("#mappedCount"),
-  overviewContent: document.querySelector("#overviewContent"),
-  emptyState: document.querySelector("#emptyState"),
-  equationList: document.querySelector("#equationList"),
-  figureList: document.querySelector("#figureList"),
-  codeMap: document.querySelector("#codeMap"),
+  scoreMetric: document.querySelector("#scoreMetric"),
+  extractedMetric: document.querySelector("#extractedMetric"),
+  flaggedMetric: document.querySelector("#flaggedMetric"),
   tabs: [...document.querySelectorAll(".tab")],
+  emptyState: document.querySelector("#emptyState"),
+  overviewGrid: document.querySelector("#overviewGrid"),
+  extractionTabs: document.querySelector("#extractionTabs"),
+  extractionList: document.querySelector("#extractionList"),
+  flaggedOnly: document.querySelector("#flaggedOnly"),
+  mappingSummary: document.querySelector("#mappingSummary"),
+  mappingList: document.querySelector("#mappingList"),
+  runtimeList: document.querySelector("#runtimeList"),
 };
 
+elements.repoUrl.value = state.repoUrl;
 elements.apiBaseUrl.value = state.apiBaseUrl;
-elements.mappingApiUrl.value = state.mappingApiUrl;
+
+wireEvents();
+render();
+checkHealth({ silent: true });
+
+function wireEvents() {
+  elements.runForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    runPipeline();
+  });
+
+  elements.pdfInput.addEventListener("change", () => {
+    state.file = elements.pdfInput.files?.[0] || null;
+    renderFileMeta();
+    updateControls();
+  });
+
+  elements.repoUrl.addEventListener("input", () => {
+    state.repoUrl = elements.repoUrl.value.trim();
+    saveSettings();
+    updateControls();
+  });
+
+  elements.apiBaseUrl.addEventListener("input", () => {
+    state.apiBaseUrl = elements.apiBaseUrl.value.trim();
+    saveSettings();
+  });
+
+  elements.healthBtn.addEventListener("click", () => checkHealth());
+  elements.clearBtn.addEventListener("click", clearAll);
+  elements.downloadBtn.addEventListener("click", downloadResult);
+
+  elements.jsonInput.addEventListener("change", () => {
+    const file = elements.jsonInput.files?.[0];
+    if (file) loadResultJson(file);
+    elements.jsonInput.value = "";
+  });
+
+  elements.flaggedOnly.addEventListener("change", () => {
+    state.flaggedOnly = elements.flaggedOnly.checked;
+    renderMappings();
+  });
+
+  elements.tabs.forEach((tab) => {
+    tab.addEventListener("click", () => {
+      state.activeTab = tab.dataset.tab;
+      renderTabs();
+    });
+  });
+}
 
 function loadSavedSettings() {
   try {
@@ -108,24 +118,635 @@ function saveSettings() {
       SETTINGS_STORAGE_KEY,
       JSON.stringify({
         apiBaseUrl: state.apiBaseUrl,
-        mappingApiUrl: state.mappingApiUrl,
+        repoUrl: state.repoUrl,
       }),
     );
   } catch {
-    // The app still works when local storage is unavailable.
+    // Local storage is a convenience, not a requirement.
   }
 }
 
+function apiUrl(path) {
+  return `${state.apiBaseUrl.replace(/\/$/, "")}${path}`;
+}
+
 function addStatus(label, stateName = "pending") {
-  state.statuses.unshift({ label, state: stateName, at: new Date().toLocaleTimeString() });
-  state.statuses = state.statuses.slice(0, 8);
+  state.statuses.unshift({
+    label,
+    state: stateName,
+    at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+  });
+  state.statuses = state.statuses.slice(0, 10);
   renderStatus();
 }
 
 function renderStatus() {
+  if (!state.statuses.length) {
+    elements.statusList.innerHTML = `<li>작업 로그가 여기에 표시됩니다.</li>`;
+    return;
+  }
   elements.statusList.innerHTML = state.statuses
-    .map((item) => `<li data-state="${item.state}">${escapeHtml(item.at)} · ${escapeHtml(item.label)}</li>`)
+    .map(
+      (item) =>
+        `<li data-state="${escapeHtml(item.state)}">${escapeHtml(item.at)} · ${escapeHtml(item.label)}</li>`,
+    )
     .join("");
+}
+
+function setBusy(value) {
+  state.busy = value;
+  updateControls();
+}
+
+function updateControls() {
+  const canRun = Boolean(state.file && state.repoUrl && state.apiBaseUrl && !state.busy);
+  elements.runBtn.disabled = !canRun;
+  elements.clearBtn.disabled = state.busy && state.polling;
+  elements.downloadBtn.disabled = !state.result;
+  elements.healthBtn.disabled = state.busy;
+}
+
+function renderFileMeta() {
+  if (!state.file) {
+    elements.fileName.textContent = "PDF 파일 선택";
+    elements.fileMeta.textContent = "아직 선택된 파일이 없습니다.";
+    return;
+  }
+  elements.fileName.textContent = state.file.name;
+  elements.fileMeta.textContent = `${formatBytes(state.file.size)} · ${state.file.type || "application/pdf"}`;
+}
+
+async function runPipeline() {
+  if (!state.file || !state.repoUrl) return;
+
+  state.result = null;
+  state.job = null;
+  state.polling = true;
+  setBusy(true);
+  render();
+
+  try {
+    addStatus("Uploading PDF and GitHub URL", "pending");
+    const formData = new FormData();
+    formData.append("file", state.file);
+    formData.append("github_url", state.repoUrl);
+
+    const startResponse = await fetch(apiUrl("/paper2run/run"), {
+      method: "POST",
+      body: formData,
+    });
+
+    const started = await readJsonResponse(startResponse);
+    if (!startResponse.ok) {
+      throw new Error(errorMessage(started, `Pipeline start failed with HTTP ${startResponse.status}`));
+    }
+    if (!started.job_id) {
+      throw new Error("Pipeline response did not include a job_id.");
+    }
+
+    state.job = started;
+    addStatus(`Job started: ${started.job_id}`, "done");
+    render();
+
+    await pollUntilDone(started.job_id);
+  } catch (error) {
+    state.polling = false;
+    state.job = {
+      ...(state.job || {}),
+      status: "error",
+      error: error.message,
+    };
+    addStatus(error.message, "error");
+    render();
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function pollUntilDone(jobId) {
+  while (state.polling) {
+    const response = await fetch(apiUrl(`/paper2run/jobs/${encodeURIComponent(jobId)}`));
+    const job = await readJsonResponse(response);
+    if (!response.ok) {
+      throw new Error(errorMessage(job, `Job polling failed with HTTP ${response.status}`));
+    }
+
+    state.job = job;
+    render();
+
+    if (job.status === "done") {
+      addStatus("Pipeline finished. Fetching full result", "done");
+      await fetchFullResult(jobId);
+      state.polling = false;
+      return;
+    }
+
+    if (job.status === "error") {
+      throw new Error(job.error || "Pipeline job failed.");
+    }
+
+    addStatus(statusLine(job), "pending");
+    await delay(POLL_INTERVAL_MS);
+  }
+}
+
+async function fetchFullResult(jobId) {
+  const response = await fetch(apiUrl(`/paper2run/jobs/${encodeURIComponent(jobId)}/result`));
+  const result = await readJsonResponse(response);
+  if (!response.ok) {
+    throw new Error(errorMessage(result, `Result fetch failed with HTTP ${response.status}`));
+  }
+  state.result = result;
+  state.activeTab = "overview";
+  state.activeExtractionGroup = firstExtractionGroup(result) || "equations";
+  addStatus("Result loaded", "done");
+  render();
+}
+
+async function checkHealth({ silent = false } = {}) {
+  if (!state.apiBaseUrl) return;
+  elements.apiHealth.textContent = "Checking API health...";
+  try {
+    const response = await fetch(apiUrl("/health"));
+    const payload = await readJsonResponse(response);
+    if (!response.ok) {
+      throw new Error(errorMessage(payload, `Health check failed with HTTP ${response.status}`));
+    }
+    elements.apiHealth.textContent = `API online · version ${payload.version || "unknown"}`;
+    if (!silent) addStatus("API health check passed", "done");
+  } catch (error) {
+    elements.apiHealth.textContent = error.message;
+    if (!silent) addStatus(error.message, "error");
+  }
+}
+
+async function loadResultJson(file) {
+  try {
+    const text = await file.text();
+    const result = JSON.parse(text);
+    state.result = normalizeLoadedResult(result);
+    state.job = {
+      job_id: state.result.job_id || "loaded-json",
+      status: state.result.status || "done",
+      filename: state.result.filename,
+      github_url: state.result.github_url,
+      overall_grounding_score: state.result.overall_grounding_score,
+      flagged_count: Array.isArray(state.result.flagged_ids) ? state.result.flagged_ids.length : null,
+      total_extracted: countExtracted(state.result),
+    };
+    state.activeTab = "overview";
+    state.activeExtractionGroup = firstExtractionGroup(state.result) || "equations";
+    addStatus(`Loaded result JSON: ${file.name}`, "done");
+    render();
+  } catch (error) {
+    addStatus(`Could not load JSON: ${error.message}`, "error");
+  }
+}
+
+function normalizeLoadedResult(data) {
+  if (data.result && typeof data.result === "object") return data.result;
+  return data;
+}
+
+function clearAll() {
+  state.file = null;
+  state.job = null;
+  state.result = null;
+  state.statuses = [];
+  state.polling = false;
+  elements.pdfInput.value = "";
+  renderFileMeta();
+  render();
+}
+
+function downloadResult() {
+  if (!state.result) return;
+  const blob = new Blob([JSON.stringify(state.result, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  const stem = (state.result.filename || "paper2run-result").replace(/\.pdf$/i, "");
+  anchor.href = url;
+  anchor.download = `${stem}_paper2run_result.json`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+function render() {
+  renderStatus();
+  renderJob();
+  renderHeader();
+  renderTabs();
+  renderOverview();
+  renderExtractions();
+  renderMappings();
+  renderRuntime();
+  updateControls();
+  scheduleMathTypeset();
+}
+
+function renderJob() {
+  const job = state.job;
+  const status = job?.status || "idle";
+  elements.jobState.textContent = status.toUpperCase();
+  elements.jobState.className = `job-state is-${status}`;
+
+  if (!job) {
+    elements.jobMeta.textContent = "새 작업을 시작하면 job_id와 상태가 여기에 표시됩니다.";
+  } else {
+    const parts = [
+      job.job_id ? `job_id: ${job.job_id}` : "",
+      job.filename ? `file: ${job.filename}` : "",
+      job.github_url ? `repo: ${job.github_url}` : "",
+      job.error ? `error: ${job.error}` : "",
+    ].filter(Boolean);
+    elements.jobMeta.textContent = parts.join(" · ");
+  }
+
+  const score = scoreFromState();
+  elements.scoreBar.style.width = score == null ? "0%" : `${Math.round(score * 100)}%`;
+}
+
+function renderHeader() {
+  const title =
+    state.result?.filename ||
+    state.job?.filename ||
+    state.file?.name ||
+    "분석할 논문을 업로드하세요";
+  elements.paperTitle.textContent = title;
+
+  const score = scoreFromState();
+  elements.scoreMetric.textContent = score == null ? "-" : `${Math.round(score * 100)}%`;
+  elements.extractedMetric.textContent = String(state.job?.total_extracted ?? countExtracted(state.result));
+  elements.flaggedMetric.textContent = String(
+    state.job?.flagged_count ?? (Array.isArray(state.result?.flagged_ids) ? state.result.flagged_ids.length : 0),
+  );
+}
+
+function renderTabs() {
+  elements.tabs.forEach((tab) => {
+    const active = tab.dataset.tab === state.activeTab;
+    tab.classList.toggle("is-active", active);
+    document.querySelector(`#${tab.dataset.tab}View`)?.classList.toggle("is-active", active);
+  });
+}
+
+function renderOverview() {
+  if (!state.result) {
+    elements.emptyState.style.display = "";
+    elements.overviewGrid.innerHTML = "";
+    return;
+  }
+
+  elements.emptyState.style.display = "none";
+  const profile = state.result.profile || state.job?.profile_summary || {};
+  const plan = Array.isArray(state.result.plan) ? state.result.plan : state.job?.plan_summary || [];
+
+  elements.overviewGrid.innerHTML = [
+    infoCard("Profile", renderKeyValues(profile)),
+    infoCard("Run Summary", renderKeyValues(summaryObject())),
+    infoCard("Plan", renderPlan(plan), "is-wide"),
+  ].join("");
+}
+
+function renderExtractions() {
+  const groups = extractionGroups(state.result);
+  if (!groups.length) {
+    elements.extractionTabs.innerHTML = "";
+    elements.extractionList.innerHTML = `<div class="empty-note">No extraction result yet.</div>`;
+    return;
+  }
+
+  if (!groups.some(([key]) => key === state.activeExtractionGroup)) {
+    state.activeExtractionGroup = groups[0][0];
+  }
+
+  elements.extractionTabs.innerHTML = groups
+    .map(
+      ([key, items]) =>
+        `<button class="subtab ${key === state.activeExtractionGroup ? "is-active" : ""}" type="button" data-group="${escapeHtml(
+          key,
+        )}">${escapeHtml(formatKey(key))} · ${items.length}</button>`,
+    )
+    .join("");
+
+  elements.extractionTabs.querySelectorAll(".subtab").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.activeExtractionGroup = button.dataset.group;
+      renderExtractions();
+      scheduleMathTypeset();
+    });
+  });
+
+  const activeItems = groups.find(([key]) => key === state.activeExtractionGroup)?.[1] || [];
+  elements.extractionList.innerHTML = activeItems.length
+    ? activeItems.map((item, index) => renderComponentCard(item, index)).join("")
+    : `<div class="empty-note">No items in this extraction group.</div>`;
+}
+
+function renderMappings() {
+  const mappings = Array.isArray(state.result?.mappings) ? state.result.mappings : [];
+  const flagged = new Set(state.result?.flagged_ids || []);
+  const visible = state.flaggedOnly
+    ? mappings.filter((mapping) => flagged.has(mapping.component_id) || mapping.verification_status !== "verified")
+    : mappings;
+
+  elements.mappingSummary.textContent = `${mappings.length} mappings · ${flagged.size} flagged`;
+
+  if (!visible.length) {
+    elements.mappingList.innerHTML = `<div class="empty-note">No grounding mappings yet.</div>`;
+    return;
+  }
+
+  elements.mappingList.innerHTML = visible.map((mapping) => renderMappingCard(mapping)).join("");
+}
+
+function renderRuntime() {
+  const runtime = Array.isArray(state.result?.runtime_log)
+    ? state.result.runtime_log
+    : Array.isArray(state.job?.runtime_log)
+      ? state.job.runtime_log
+      : [];
+
+  if (!runtime.length) {
+    elements.runtimeList.innerHTML = `<div class="empty-note">Runtime log will appear after the pipeline reports it.</div>`;
+    return;
+  }
+
+  elements.runtimeList.innerHTML = runtime.map((entry) => renderRuntimeItem(entry)).join("");
+}
+
+function renderComponentCard(item, index) {
+  const title =
+    item.algorithm_name ||
+    item.command_type ||
+    item.figure_id ||
+    item.caption ||
+    item.role ||
+    item.id ||
+    `Item ${index + 1}`;
+  const meta = [
+    item.id ? `id ${item.id}` : "",
+    item.page != null ? `page ${item.page}` : "",
+    item.confidence != null ? `confidence ${formatPercent(item.confidence)}` : "",
+    item.role ? `role ${item.role}` : "",
+    item.figure_type ? `type ${item.figure_type}` : "",
+    item.framework ? `framework ${item.framework}` : "",
+  ].filter(Boolean);
+
+  const body = [
+    item.latex ? `<div class="latex">\\[${escapeHtml(item.latex)}\\]</div>` : "",
+    item.raw_command ? `<pre class="code-block">${escapeHtml(item.raw_command)}</pre>` : "",
+    item.steps_summary ? `<div class="text-block">${escapeHtml(item.steps_summary)}</div>` : "",
+    item.description ? `<div class="text-block">${escapeHtml(item.description)}</div>` : "",
+    item.caption ? `<div class="text-block">${escapeHtml(item.caption)}</div>` : "",
+    item.key_insight ? `<div class="text-block">${escapeHtml(item.key_insight)}</div>` : "",
+    item.context ? `<div class="text-block">${escapeHtml(item.context)}</div>` : "",
+  ]
+    .filter(Boolean)
+    .join("");
+
+  return `
+    <article class="component-card">
+      <h3>${escapeHtml(String(title).slice(0, 140))}</h3>
+      <div class="component-meta">${escapeHtml(meta.join(" · ") || "extracted component")}</div>
+      <div class="component-body">${body || renderKeyValues(item)}</div>
+    </article>
+  `;
+}
+
+function renderMappingCard(mapping) {
+  const status = mapping.verification_status || "unknown";
+  const component = findComponent(mapping.component_id);
+  const matches = Array.isArray(mapping.matches) ? mapping.matches : [];
+  const componentTitle = component
+    ? component.caption || component.description || component.algorithm_name || component.raw_command || component.id
+    : mapping.component_id;
+
+  return `
+    <article class="mapping-card" data-status="${escapeHtml(status)}">
+      <div class="mapping-head">
+        <div>
+          <h3>${escapeHtml(mapping.component_type || "component")} · ${escapeHtml(mapping.component_id)}</h3>
+          <div class="mapping-meta">${escapeHtml(String(componentTitle || "No component preview").slice(0, 240))}</div>
+        </div>
+        <span class="status-badge" data-status="${escapeHtml(status)}">${escapeHtml(status)}</span>
+      </div>
+      ${
+        mapping.reviewer_note
+          ? `<div class="text-block">${escapeHtml(mapping.reviewer_note)}</div>`
+          : ""
+      }
+      <div class="match-list">
+        ${
+          matches.length
+            ? matches.map((match) => renderMatch(match)).join("")
+            : `<div class="empty-note">No match found.</div>`
+        }
+      </div>
+    </article>
+  `;
+}
+
+function renderMatch(match) {
+  const githubUrl = state.result?.github_url || state.job?.github_url || state.repoUrl;
+  const link = buildGithubLineUrl(githubUrl, match.file, match.line_start, match.line_end);
+  return `
+    <div class="match-item">
+      <div class="match-title">
+        <a href="${escapeAttribute(link)}" target="_blank" rel="noreferrer">
+          ${escapeHtml(match.file || "unknown file")}#L${escapeHtml(match.line_start)}-L${escapeHtml(match.line_end)}
+        </a>
+        <span>${escapeHtml(formatPercent(match.confidence))}</span>
+      </div>
+      <div class="mapping-meta">${escapeHtml(match.semantic_link || "")}</div>
+      ${
+        match.matched_code_snippet
+          ? `<pre class="code-block">${escapeHtml(match.matched_code_snippet)}</pre>`
+          : ""
+      }
+    </div>
+  `;
+}
+
+function renderRuntimeItem(entry) {
+  const title = entry.agent || entry.stage || entry.name || entry.node || "runtime";
+  return `
+    <article class="runtime-item">
+      <div>
+        <strong>${escapeHtml(title)}</strong>
+        <div class="component-meta">${entry.duration_seconds != null ? `${escapeHtml(entry.duration_seconds)}s` : ""}</div>
+      </div>
+      <div>${renderKeyValues(entry)}</div>
+    </article>
+  `;
+}
+
+function infoCard(title, body, extraClass = "") {
+  return `
+    <section class="info-card ${extraClass}">
+      <h3>${escapeHtml(title)}</h3>
+      ${body || `<div class="empty-note">No data yet.</div>`}
+    </section>
+  `;
+}
+
+function renderPlan(plan) {
+  if (!Array.isArray(plan) || !plan.length) {
+    return `<div class="empty-note">No plan summary available.</div>`;
+  }
+
+  return `<div class="plan-list">${plan
+    .map((item, index) => {
+      const title = item.extractor || item.name || item.agent || item.stage || `Step ${index + 1}`;
+      const body = item.focus || item.reason || item.description || item.summary || "";
+      return `
+        <div class="plan-item">
+          <span class="rank-badge">${escapeHtml(item.priority ?? index + 1)}</span>
+          <div>
+            <strong>${escapeHtml(title)}</strong>
+            <div class="component-meta">${escapeHtml(body)}</div>
+            ${renderKeyValues(item)}
+          </div>
+        </div>
+      `;
+    })
+    .join("")}</div>`;
+}
+
+function renderKeyValues(object) {
+  if (!object || typeof object !== "object") return "";
+  const entries = Object.entries(object).filter(([, value]) => value != null && value !== "");
+  if (!entries.length) return "";
+  return `
+    <div class="kv-grid">
+      ${entries
+        .map(
+          ([key, value]) => `
+            <div class="kv-item">
+              <small>${escapeHtml(formatKey(key))}</small>
+              <span>${escapeHtml(formatValue(value))}</span>
+            </div>
+          `,
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function summaryObject() {
+  return {
+    job_id: state.result?.job_id || state.job?.job_id,
+    filename: state.result?.filename || state.job?.filename,
+    github_url: state.result?.github_url || state.job?.github_url || state.repoUrl,
+    status: state.result?.status || state.job?.status,
+    overall_grounding_score: scoreFromState() == null ? null : formatPercent(scoreFromState()),
+    flagged_count: state.job?.flagged_count ?? state.result?.flagged_ids?.length ?? 0,
+    total_extracted: state.job?.total_extracted ?? countExtracted(state.result),
+  };
+}
+
+function extractionGroups(result) {
+  const extractions = result?.extractions;
+  if (!extractions || typeof extractions !== "object") return [];
+  return Object.entries(extractions)
+    .map(([key, value]) => [key, Array.isArray(value) ? value : []])
+    .filter(([, value]) => value.length);
+}
+
+function firstExtractionGroup(result) {
+  return extractionGroups(result)[0]?.[0] || null;
+}
+
+function findComponent(componentId) {
+  if (!componentId) return null;
+  for (const [, items] of extractionGroups(state.result)) {
+    const found = items.find((item) => {
+      const ids = [
+        item.id,
+        item.component_id,
+        item.figure_id,
+        item.algorithm_id,
+        item.command_id,
+        item.eq_number != null ? `eq_${item.eq_number}` : null,
+        item.fig_number != null ? `fig_${item.fig_number}` : null,
+      ].filter(Boolean);
+      return ids.map(String).includes(String(componentId));
+    });
+    if (found) return found;
+  }
+  return null;
+}
+
+function countExtracted(result) {
+  return extractionGroups(result).reduce((sum, [, items]) => sum + items.length, 0);
+}
+
+function scoreFromState() {
+  const score = state.result?.overall_grounding_score ?? state.job?.overall_grounding_score;
+  return Number.isFinite(Number(score)) ? Number(score) : null;
+}
+
+function statusLine(job) {
+  const parts = [
+    "Pipeline processing",
+    job.total_extracted != null ? `${job.total_extracted} extracted` : "",
+    job.flagged_count != null ? `${job.flagged_count} flagged` : "",
+  ].filter(Boolean);
+  return parts.join(" · ");
+}
+
+async function readJsonResponse(response) {
+  const text = await response.text();
+  if (!text) return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { detail: text };
+  }
+}
+
+function errorMessage(payload, fallback) {
+  if (!payload) return fallback;
+  if (typeof payload.error === "string") return payload.error;
+  if (typeof payload.detail === "string") return payload.detail;
+  if (Array.isArray(payload.detail)) return payload.detail.map((item) => item.msg || JSON.stringify(item)).join("; ");
+  return fallback;
+}
+
+function buildGithubLineUrl(repoUrl, file, lineStart, lineEnd) {
+  if (!repoUrl || !file) return "#";
+  const normalized = repoUrl.replace(/\/$/, "").replace(/\.git$/, "");
+  const line = lineStart ? `#L${lineStart}${lineEnd ? `-L${lineEnd}` : ""}` : "";
+  return `${normalized}/blob/HEAD/${file}${line}`;
+}
+
+function formatKey(key) {
+  return String(key).replaceAll("_", " ");
+}
+
+function formatValue(value) {
+  if (Array.isArray(value)) return value.map(formatValue).join(", ");
+  if (typeof value === "object" && value !== null) return JSON.stringify(value);
+  if (typeof value === "number" && value >= 0 && value <= 1) return formatPercent(value);
+  return String(value);
+}
+
+function formatPercent(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "-";
+  return `${Math.round(number * 100)}%`;
+}
+
+function formatBytes(bytes) {
+  if (!Number.isFinite(bytes)) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${kb.toFixed(1)} KB`;
+  return `${(kb / 1024).toFixed(1)} MB`;
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function escapeHtml(value) {
@@ -137,767 +758,15 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
-function apiUrl(path) {
-  return `${state.apiBaseUrl.replace(/\/$/, "")}${path}`;
+function escapeAttribute(value) {
+  return escapeHtml(value).replaceAll("`", "&#096;");
 }
 
-function setBusy(action = null) {
-  state.busyAction = action;
-  updateControls();
-}
-
-function updateControls() {
-  const isBusy = Boolean(state.busyAction);
-  elements.extractBtn.disabled = isBusy || !state.file;
-  elements.jsonInput.disabled = isBusy;
-  elements.uploadBtn.classList.toggle("is-disabled", isBusy);
-  elements.uploadBtn.classList.toggle("is-loading", state.busyAction === "upload");
-  elements.uploadBtn.setAttribute("aria-disabled", String(isBusy));
-  elements.mapBtn.disabled = isBusy || !canMap();
-  elements.downloadBtn.disabled = isBusy || !hasResults();
-  elements.clearBtn.disabled = isBusy || !hasCurrentRun();
-  elements.extractBtn.classList.toggle("is-loading", state.busyAction === "extract");
-  elements.mapBtn.classList.toggle("is-loading", state.busyAction === "mapping");
-  elements.downloadBtn.classList.remove("is-loading");
-}
-
-function hasResults() {
-  return state.equations.length > 0 || state.figures.length > 0;
-}
-
-function hasCurrentRun() {
-  return Boolean(state.file || state.paper || state.repoUrl.trim() || hasResults());
-}
-
-function canMap() {
-  return hasResults() && Boolean(state.repoUrl.trim()) && Boolean(state.mappingApiUrl.trim());
-}
-
-async function uploadForExtraction(endpoint) {
-  const formData = new FormData();
-  formData.append("file", state.file);
-
-  const response = await fetch(apiUrl(endpoint), {
-    method: "POST",
-    body: formData,
-  });
-
-  if (!response.ok) {
-    throw new Error(`${endpoint} failed with HTTP ${response.status}`);
-  }
-
-  return response.json();
-}
-
-async function waitForJob(jobId) {
-  while (true) {
-    const response = await fetch(apiUrl(`/jobs/${jobId}`));
-    if (!response.ok) {
-      throw new Error(`Job polling failed with HTTP ${response.status}`);
+function scheduleMathTypeset() {
+  window.clearTimeout(state.mathTypesetTimer);
+  state.mathTypesetTimer = window.setTimeout(() => {
+    if (window.MathJax?.typesetPromise) {
+      window.MathJax.typesetPromise().catch(() => {});
     }
-    const job = await response.json();
-    if (job.status === "done") return job;
-    if (job.status === "error") throw new Error(job.error || "Extraction job failed");
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-  }
+  }, 50);
 }
-
-async function resolveExtraction(endpoint) {
-  const started = await uploadForExtraction(endpoint);
-  if (started.status === "done") return started;
-  if (!started.job_id) {
-    throw new Error(`Unexpected response from ${endpoint}`);
-  }
-  return waitForJob(started.job_id);
-}
-
-async function fetchEquations(paperId) {
-  const response = await fetch(apiUrl(`/papers/${paperId}/equations`));
-  if (!response.ok) throw new Error(`Equation fetch failed with HTTP ${response.status}`);
-  return response.json();
-}
-
-async function fetchFigures(paperId) {
-  const response = await fetch(apiUrl(`/papers/${paperId}/figures`));
-  if (!response.ok) throw new Error(`Figure fetch failed with HTTP ${response.status}`);
-  return response.json();
-}
-
-async function runExtraction() {
-  if (!state.file) return;
-
-  setBusy("extract");
-  state.equations = [];
-  state.figures = [];
-  state.codeSnippets = {};
-  state.paper = { filename: state.file.name };
-  render();
-
-  try {
-    addStatus("Uploading PDF for equations", "pending");
-    const equationJob = await resolveExtraction("/papers/extract");
-    const paperId = equationJob.paper_id;
-    state.paper = { ...state.paper, paper_id: paperId, equation_job: equationJob };
-    state.equations = await fetchEquations(paperId);
-    addStatus(`Loaded ${state.equations.length} equations`, "done");
-
-    try {
-      addStatus("Uploading PDF for figures", "pending");
-      const figureJob = await resolveExtraction("/papers/figures/extract");
-      const figurePaperId = figureJob.paper_id || paperId;
-      state.paper = { ...state.paper, figure_job: figureJob, figure_paper_id: figurePaperId };
-      state.figures = await fetchFigures(figurePaperId);
-      addStatus(`Loaded ${state.figures.length} figures`, "done");
-    } catch (error) {
-      addStatus(`Figure extraction unavailable: ${error.message}`, "error");
-    }
-
-    render();
-  } catch (error) {
-    addStatus(error.message, "error");
-  } finally {
-    setBusy(null);
-  }
-}
-
-async function runMapping() {
-  if (!canMap()) return;
-  setBusy("mapping");
-  addStatus("Requesting code-location mapping", "pending");
-
-  const payload = buildOutputJson();
-  payload.github_repository = {
-    ...(payload.github_repository || {}),
-    url: state.repoUrl.trim(),
-  };
-
-  try {
-    const response = await fetch(state.mappingApiUrl.trim(), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    if (!response.ok) {
-      throw new Error(`Mapping API failed with HTTP ${response.status}`);
-    }
-    const mapped = await response.json();
-    state.paper = {
-      ...state.paper,
-      github_repository: mapped.github_repository || payload.github_repository,
-      code_mapping_counts: mapped.code_mapping_counts,
-    };
-    state.codeSnippets = {};
-    state.equations = Array.isArray(mapped.equations) ? mapped.equations : state.equations;
-    state.figures = Array.isArray(mapped.figures) ? mapped.figures : state.figures;
-    addStatus("Code mapping complete", "done");
-    render();
-  } catch (error) {
-    addStatus(error.message, "error");
-  } finally {
-    setBusy(null);
-  }
-}
-
-function buildOutputJson() {
-  return {
-    filename: state.paper?.filename || state.file?.name || "paper.pdf",
-    paper_id: state.paper?.paper_id,
-    base_url: state.apiBaseUrl,
-    github_repository: state.paper?.github_repository || { url: state.repoUrl.trim() },
-    equation_job: state.paper?.equation_job,
-    figure_job: state.paper?.figure_job,
-    equations: state.equations,
-    figures: state.figures,
-    counts: {
-      equations: state.equations.length,
-      figures: state.figures.length,
-    },
-    code_mapping_counts: {
-      mapped_equations: state.equations.filter((item) => item.code_mapping_status === "mapped").length,
-      total_equations: state.equations.length,
-      mapped_figures: state.figures.filter((item) => item.code_mapping_status === "mapped").length,
-      total_figures: state.figures.length,
-    },
-  };
-}
-
-function downloadJson() {
-  const blob = new Blob([JSON.stringify(buildOutputJson(), null, 2)], {
-    type: "application/json",
-  });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  const stem = (state.paper?.filename || "paper").replace(/\.pdf$/i, "");
-  anchor.href = url;
-  anchor.download = `${stem}_paper2run_with_code.json`;
-  anchor.click();
-  URL.revokeObjectURL(url);
-}
-
-async function loadJson(file) {
-  const text = await file.text();
-  const data = JSON.parse(text);
-  state.paper = {
-    filename: data.filename || file.name,
-    paper_id: data.paper_id,
-    github_repository: data.github_repository,
-    code_mapping_counts: data.code_mapping_counts,
-  };
-  state.repoUrl = data.github_repository?.url || state.repoUrl;
-  elements.repoUrl.value = state.repoUrl;
-  state.equations = Array.isArray(data.equations) ? data.equations : [];
-  state.figures = Array.isArray(data.figures) ? data.figures : [];
-  state.codeSnippets = {};
-  addStatus(`Loaded ${file.name}`, "done");
-  render();
-}
-
-function render() {
-  const mapped = [...state.equations, ...state.figures].filter(
-    (item) => item.code_mapping_status === "mapped" || item.code_locations?.length,
-  ).length;
-
-  elements.paperTitle.textContent = state.paper?.filename || state.file?.name || "Upload a paper to begin";
-  elements.equationCount.textContent = state.equations.length;
-  elements.figureCount.textContent = state.figures.length;
-  elements.mappedCount.textContent = mapped;
-  elements.emptyState.style.display = hasResults() ? "none" : "grid";
-  elements.overviewContent.style.display = hasResults() ? "grid" : "none";
-
-  renderOverview();
-  renderEquations();
-  renderFigures();
-  renderCodeMap();
-  typesetMath();
-  updateControls();
-}
-
-function renderOverview() {
-  if (!hasResults()) {
-    elements.overviewContent.innerHTML = "";
-    return;
-  }
-
-  elements.overviewContent.innerHTML = `
-    <section class="panel overview-section">
-      <h3>Equations</h3>
-      <div class="overview-list">
-        ${state.equations.map(renderEquationSummary).join("") || "<p>No equations loaded.</p>"}
-      </div>
-    </section>
-    <section class="panel overview-section">
-      <h3>Figures</h3>
-      <div class="overview-figure-list">
-        ${state.figures.map(renderFigureSummary).join("") || "<p>No figures loaded.</p>"}
-      </div>
-    </section>
-  `;
-}
-
-function renderEquationSummary(equation) {
-  return `
-    <article class="overview-equation">
-      <div class="overview-equation-math">${escapeHtml(formatLatexForDisplay(equation.latex || ""))}</div>
-      <p class="overview-one-line">
-        <strong>Equation ${escapeHtml(equation.eq_number)}</strong>
-        ${escapeHtml(equation.description || equation.core_reason || equation.section_hint || "No explanation available.")}
-      </p>
-    </article>
-  `;
-}
-
-function renderFigureSummary(figure) {
-  const image = figure.image_url
-    ? `<img src="${escapeHtml(figure.image_url)}" alt="${escapeHtml(figure.caption || "Extracted figure")}" />`
-    : `<div class="overview-figure-placeholder">No image</div>`;
-
-  return `
-    <article class="overview-figure">
-      ${image}
-      <p><strong>Figure ${escapeHtml(figure.fig_number)}</strong> ${escapeHtml(figure.caption || figure.key_insight || "Figure")}</p>
-    </article>
-  `;
-}
-
-function renderEquations() {
-  elements.equationList.innerHTML =
-    state.equations.map(renderEquationCard).join("") || emptyMessage("No equations loaded.");
-}
-
-function renderEquationCard(equation) {
-  return `
-    <article class="component-card">
-      <div class="card-header">
-        <h3>Equation ${escapeHtml(equation.eq_number)}</h3>
-        <div class="badge-row">
-          <span class="badge">${escapeHtml(equation.role || "unknown")}</span>
-          <span class="badge ${equation.importance_hint === "high" ? "high" : ""}">${escapeHtml(equation.importance_hint || "medium")}</span>
-          <span class="badge">page ${escapeHtml(equation.page || "-")}</span>
-        </div>
-      </div>
-      <div class="math-render">${escapeHtml(formatLatexForDisplay(equation.latex || ""))}</div>
-      <p>${escapeHtml(equation.description || "")}</p>
-      <p>${escapeHtml(equation.core_reason || "")}</p>
-      ${renderLocations(equation.code_locations)}
-    </article>
-  `;
-}
-
-function formatLatexForDisplay(value) {
-  let latex = String(value || "").trim();
-  if (!latex) return "\\[\\]";
-
-  latex = latex
-    .replace(/^\\\[/, "")
-    .replace(/\\\]$/, "")
-    .replace(/^\\\(/, "")
-    .replace(/\\\)$/, "")
-    .replace(/^\$\$/, "")
-    .replace(/\$\$$/, "")
-    .replace(/^\$/, "")
-    .replace(/\$$/, "")
-    .replace(/^\\begin\{equation\*?\}/, "")
-    .replace(/\\end\{equation\*?\}$/, "")
-    .trim();
-
-  return `\\[${latex}\\]`;
-}
-
-function typesetMath() {
-  if (!window.MathJax) return;
-
-  if (!window.MathJax.typesetPromise && !window.MathJax.startup?.promise) {
-    window.clearTimeout(state.mathTypesetTimer);
-    state.mathTypesetTimer = window.setTimeout(typesetMath, 100);
-    return;
-  }
-
-  const targets = [elements.overviewContent, elements.equationList, elements.codeMap];
-  const runTypeset = () => {
-    window.MathJax.typesetClear?.(targets);
-    window.MathJax.typesetPromise?.(targets).catch((error) => {
-      addStatus(`Equation rendering failed: ${error.message}`, "error");
-    });
-  };
-
-  if (window.MathJax.startup?.promise) {
-    window.MathJax.startup.promise.then(runTypeset).catch(() => {});
-  } else {
-    runTypeset();
-  }
-}
-
-function renderFigures() {
-  elements.figureList.innerHTML =
-    state.figures.map(renderFigureCard).join("") || emptyMessage("No figures loaded.");
-}
-
-function renderFigureCard(figure) {
-  const image = figure.image_url
-    ? `<img src="${escapeHtml(figure.image_url)}" alt="${escapeHtml(figure.caption || "Extracted figure")}" />`
-    : "";
-  return `
-    <article class="figure-card">
-      ${image}
-      <div class="figure-body">
-        <div class="card-header">
-          <h3>Figure ${escapeHtml(figure.fig_number)}</h3>
-          <span class="badge">${escapeHtml(figure.figure_type || "figure")}</span>
-        </div>
-        <p>${escapeHtml(figure.caption || "")}</p>
-        <p>${escapeHtml(figure.key_insight || "")}</p>
-        ${renderLocations(figure.code_locations)}
-      </div>
-    </article>
-  `;
-}
-
-function renderLocations(locations = []) {
-  if (!locations.length) {
-    return `<div class="meta-line">No code locations mapped yet.</div>`;
-  }
-  return `
-    <div class="location-list">
-      ${locations
-        .map(
-          (location) => `
-          <a class="code-link" href="${escapeHtml(location.url || "#")}" target="_blank" rel="noreferrer">
-            <span class="code-symbol">${escapeHtml(location.symbol || "code")}</span>
-            <span class="code-path">${escapeHtml(location.path || "")}:${escapeHtml(location.line_start || "")}-${escapeHtml(location.line_end || "")}</span>
-          </a>
-        `,
-        )
-        .join("")}
-    </div>
-  `;
-}
-
-function renderCodeMap() {
-  const components = [
-    ...state.equations.map((item) => ({ type: "Equation", label: `Equation ${item.eq_number}`, item })),
-    ...state.figures.map((item) => ({ type: "Figure", label: `Figure ${item.fig_number}`, item })),
-  ];
-  const mapped = components.filter(({ item }) => item.code_locations?.length);
-
-  elements.codeMap.innerHTML =
-    mapped
-      .map(({ type, label, item }) => {
-        return `
-          <article class="map-row">
-            <div class="map-node">
-              ${renderMappedComponent(type, label, item)}
-            </div>
-            <div class="map-arrow">→</div>
-            <div class="map-node">
-              ${item.code_locations.map(renderCodeLocationDetail).join("")}
-            </div>
-          </article>
-        `;
-      })
-      .join("") || emptyMessage("No mapped code locations yet.");
-
-  loadCodeSnippets();
-}
-
-function renderMappedComponent(type, label, item) {
-  if (type === "Equation") {
-    return `
-      <div class="mapped-component">
-        <strong>${escapeHtml(label)}</strong>
-        <div class="mapped-equation-math">${escapeHtml(formatLatexForDisplay(item.latex || ""))}</div>
-        <p>${escapeHtml(item.description || item.core_reason || item.section_hint || "Equation")}</p>
-      </div>
-    `;
-  }
-
-  const image = item.image_url
-    ? `<img src="${escapeHtml(item.image_url)}" alt="${escapeHtml(item.caption || "Mapped figure")}" />`
-    : `<div class="mapped-figure-placeholder">No image</div>`;
-
-  return `
-    <div class="mapped-component">
-      <strong>${escapeHtml(label)}</strong>
-      <div class="mapped-figure-preview">${image}</div>
-      <p>${escapeHtml(item.caption || item.key_insight || "Figure")}</p>
-    </div>
-  `;
-}
-
-function renderCodeLocationDetail(location) {
-  return `
-    <article class="code-location-detail">
-      <details class="code-disclosure">
-        <summary>
-          <span class="toggle-arrow" aria-hidden="true">›</span>
-          <span class="code-toggle-copy">
-            <span class="code-symbol">${escapeHtml(location.symbol || "code location")}</span>
-            <span class="code-path">${escapeHtml(location.path || "")}:${escapeHtml(location.line_start || "")}-${escapeHtml(location.line_end || "")}</span>
-            <span class="toggle-state" aria-hidden="true"></span>
-          </span>
-          ${
-            location.url
-              ? `<a class="summary-source-link" href="${escapeHtml(location.url)}" target="_blank" rel="noreferrer" onclick="event.stopPropagation()">Open</a>`
-              : ""
-          }
-        </summary>
-        <div class="code-disclosure-body">
-          ${renderCodeSnippet(location)}
-          ${location.relation ? `<p class="code-note">${escapeHtml(location.relation)}</p>` : ""}
-          ${location.rationale ? `<p class="code-note">${escapeHtml(location.rationale)}</p>` : ""}
-        </div>
-      </details>
-    </article>
-  `;
-}
-
-function renderCodeSnippet(location) {
-  if (!getRawCodeUrl(location)) {
-    return `<div class="snippet-message">No source URL available.</div>`;
-  }
-
-  const key = getLocationKey(location);
-  const snippet = state.codeSnippets[key];
-
-  if (snippet?.status === "done") {
-    return renderHighlightedCodeSnippet(snippet);
-  }
-
-  if (snippet?.status === "error") {
-    return `<div class="snippet-message">Could not load code snippet.</div>`;
-  }
-
-  return `<div class="snippet-message">Loading code snippet...</div>`;
-}
-
-function loadCodeSnippets() {
-  const locations = getMappedLocations();
-  const pending = locations.filter((location) => {
-    const key = getLocationKey(location);
-    return getRawCodeUrl(location) && !state.codeSnippets[key];
-  });
-
-  if (!pending.length) return;
-
-  pending.forEach((location) => {
-    state.codeSnippets[getLocationKey(location)] = { status: "loading" };
-  });
-
-  Promise.allSettled(pending.map(loadCodeSnippet)).then(() => {
-    renderCodeMap();
-    typesetMath();
-  });
-}
-
-async function loadCodeSnippet(location) {
-  const key = getLocationKey(location);
-
-  try {
-    const rawUrl = getRawCodeUrl(location);
-    if (!rawUrl) throw new Error("Missing GitHub source URL.");
-
-    const response = await fetch(rawUrl);
-    if (!response.ok) throw new Error(`Source fetch failed with HTTP ${response.status}`);
-
-    const text = await response.text();
-    state.codeSnippets[key] = {
-      status: "done",
-      ...extractCodeSnippet(text, location.line_start, location.line_end),
-    };
-  } catch (error) {
-    state.codeSnippets[key] = { status: "error", error: error.message };
-  }
-}
-
-function getMappedLocations() {
-  return [...state.equations, ...state.figures].flatMap((item) => item.code_locations || []);
-}
-
-function getLocationKey(location) {
-  return [
-    location.url,
-    location.repository,
-    location.commit,
-    location.path,
-    location.line_start,
-    location.line_end,
-    location.symbol,
-  ]
-    .filter(Boolean)
-    .join("|");
-}
-
-function getRawCodeUrl(location) {
-  if (location.url) {
-    try {
-      const parsed = new URL(location.url);
-      const parts = parsed.pathname.split("/").filter(Boolean);
-      if (parsed.hostname === "github.com" && parts[2] === "blob" && parts.length >= 5) {
-        const [owner, repo, , ref, ...pathParts] = parts;
-        return `https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${pathParts.join("/")}`;
-      }
-      if (parsed.hostname === "raw.githubusercontent.com") return parsed.href.split("#")[0];
-    } catch {
-      return "";
-    }
-  }
-
-  if (!location.repository || !location.commit || !location.path) return "";
-
-  try {
-    const parsed = new URL(location.repository);
-    const [owner, repo] = parsed.pathname.split("/").filter(Boolean);
-    if (!owner || !repo) return "";
-    return `https://raw.githubusercontent.com/${owner}/${repo}/${location.commit}/${location.path}`;
-  } catch {
-    return "";
-  }
-}
-
-function extractCodeSnippet(text, lineStart, lineEnd) {
-  const lines = text.split(/\r?\n/);
-  const startLine = Math.max(1, Number(lineStart) || 1);
-  const endLine = Math.max(startLine, Number(lineEnd) || startLine);
-  const displayStart = Math.max(1, startLine - 3);
-  const displayEnd = Math.min(lines.length, endLine + 3);
-  const width = String(displayEnd).length;
-  const rows = lines.slice(displayStart - 1, displayEnd).map((line, index) => {
-      const lineNumber = displayStart + index;
-      return {
-        isMapped: lineNumber >= startLine && lineNumber <= endLine,
-        lineNumber,
-        lineNumberLabel: String(lineNumber).padStart(width, " "),
-        source: line,
-      };
-    });
-  const code = rows
-    .map((row) => `${row.isMapped ? ">" : " "} ${row.lineNumberLabel} | ${row.source}`)
-    .join("\n");
-
-  return { code, rows, startLine: displayStart, endLine: displayEnd };
-}
-
-function renderHighlightedCodeSnippet(snippet) {
-  if (!Array.isArray(snippet.rows)) {
-    return `<pre class="code-snippet"><code>${escapeHtml(snippet.code || "")}</code></pre>`;
-  }
-
-  const lines = snippet.rows
-    .map(
-      (row) =>
-        `<span class="code-line ${row.isMapped ? "is-mapped" : ""}"><span class="code-marker">${
-          row.isMapped ? ">" : ""
-        }</span><span class="code-line-number">${escapeHtml(row.lineNumberLabel)}</span><span class="code-divider">|</span><span class="code-content">${highlightSourceCode(row.source)}</span></span>`,
-    )
-    .join("");
-
-  return `<pre class="code-snippet"><code>${lines}</code></pre>`;
-}
-
-function highlightSourceCode(source) {
-  let html = "";
-  let index = 0;
-  const value = String(source ?? "");
-
-  while (index < value.length) {
-    const char = value[index];
-    const next = value[index + 1];
-
-    if (char === "#" || (char === "/" && next === "/")) {
-      html += `<span class="token-comment">${escapeHtml(value.slice(index))}</span>`;
-      break;
-    }
-
-    if (char === '"' || char === "'" || char === "`") {
-      const quote = char;
-      let end = index + 1;
-      while (end < value.length) {
-        if (value[end] === "\\") {
-          end += 2;
-          continue;
-        }
-        if (value[end] === quote) {
-          end += 1;
-          break;
-        }
-        end += 1;
-      }
-      html += `<span class="token-string">${escapeHtml(value.slice(index, end))}</span>`;
-      index = end;
-      continue;
-    }
-
-    if (/\d/.test(char)) {
-      const match = value.slice(index).match(/^\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/);
-      if (match) {
-        html += `<span class="token-number">${escapeHtml(match[0])}</span>`;
-        index += match[0].length;
-        continue;
-      }
-    }
-
-    if (/[A-Za-z_$]/.test(char)) {
-      const match = value.slice(index).match(/^[A-Za-z_$][\w$]*/);
-      if (match) {
-        const word = match[0];
-        const rest = value.slice(index + word.length);
-        const nextNonSpace = rest.match(/\S/)?.[0];
-        if (CODE_KEYWORDS.has(word.toLowerCase())) {
-          html += `<span class="token-keyword">${escapeHtml(word)}</span>`;
-        } else if (nextNonSpace === "(") {
-          html += `<span class="token-function">${escapeHtml(word)}</span>`;
-        } else {
-          html += escapeHtml(word);
-        }
-        index += word.length;
-        continue;
-      }
-    }
-
-    if (/[{}()[\].,;:+\-*/%=<>!&|?]/.test(char)) {
-      html += `<span class="token-punctuation">${escapeHtml(char)}</span>`;
-      index += 1;
-      continue;
-    }
-
-    html += escapeHtml(char);
-    index += 1;
-  }
-
-  return html || " ";
-}
-
-function emptyMessage(text) {
-  return `<div class="empty-state"><h3>${escapeHtml(text)}</h3></div>`;
-}
-
-function activateTab(tabName) {
-  state.activeTab = tabName;
-  elements.tabs.forEach((tab) => tab.classList.toggle("is-active", tab.dataset.tab === tabName));
-  document.querySelectorAll(".view").forEach((view) => view.classList.remove("is-active"));
-  document.querySelector(`#${tabName}View`).classList.add("is-active");
-}
-
-function clearCurrentRun() {
-  state.file = null;
-  state.repoUrl = "";
-  state.paper = null;
-  state.equations = [];
-  state.figures = [];
-  state.codeSnippets = {};
-  elements.pdfInput.value = "";
-  elements.jsonInput.value = "";
-  elements.repoUrl.value = "";
-  elements.fileMeta.textContent = "No file selected";
-  activateTab("overview");
-  addStatus("Cleared current run", "done");
-  render();
-}
-
-elements.pdfInput.addEventListener("change", (event) => {
-  state.file = event.target.files?.[0] || null;
-  elements.fileMeta.textContent = state.file
-    ? `${state.file.name} · ${(state.file.size / 1024 / 1024).toFixed(2)} MB`
-    : "No file selected";
-  updateControls();
-});
-
-elements.repoUrl.addEventListener("input", (event) => {
-  state.repoUrl = event.target.value;
-  updateControls();
-});
-
-elements.apiBaseUrl.addEventListener("input", (event) => {
-  state.apiBaseUrl = event.target.value || DEFAULT_API_BASE_URL;
-  saveSettings();
-});
-
-elements.mappingApiUrl.addEventListener("input", (event) => {
-  state.mappingApiUrl = event.target.value || DEFAULT_MAPPING_API_URL;
-  saveSettings();
-  updateControls();
-});
-
-elements.extractBtn.addEventListener("click", runExtraction);
-elements.mapBtn.addEventListener("click", runMapping);
-elements.downloadBtn.addEventListener("click", downloadJson);
-elements.clearBtn.addEventListener("click", clearCurrentRun);
-elements.jsonInput.addEventListener("change", async (event) => {
-  const file = event.target.files?.[0];
-  if (!file) return;
-  setBusy("upload");
-  try {
-    await loadJson(file);
-  } catch (error) {
-    addStatus(error.message, "error");
-  } finally {
-    event.target.value = "";
-    setBusy(null);
-  }
-});
-
-elements.tabs.forEach((tab) => {
-  tab.addEventListener("click", () => activateTab(tab.dataset.tab));
-});
-
-addStatus("Frontend ready", "done");
-render();
