@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>P4DS Paper2Run Console</title>
+    <title>P4DS Paper2Run Workbench</title>
     <link rel="stylesheet" href="./styles.css" />
     <script>
       window.MathJax = {
@@ -21,12 +21,17 @@
         <div class="brand-row">
           <div class="brand-mark">P4DS</div>
           <div>
-            <h1>Paper2Run Console</h1>
-            <p>Connect a paper PDF to a GitHub repository and inspect runnable evidence.</p>
+            <h1>Paper2Run Workbench</h1>
+            <p>Extract paper components, ground them in code, and review evidence quality.</p>
           </div>
         </div>
 
         <form id="runForm" class="run-form">
+          <div class="form-heading">
+            <span>Pipeline input</span>
+            <small>PDF + public GitHub repository</small>
+          </div>
+
           <div class="field">
             <label for="pdfInput">Paper PDF</label>
             <label class="file-drop" for="pdfInput">
@@ -89,9 +94,14 @@
       </section>
 
       <section class="workspace">
+        <div class="workspace-topbar">
+          <span>Evidence Workbench</span>
+          <small>Profiling · Extraction · Grounding · Verification</small>
+        </div>
+
         <header class="workspace-header">
           <div>
-            <p class="eyebrow">Full Pipeline Result</p>
+            <p class="eyebrow">Pipeline Result</p>
             <h2 id="paperTitle">Upload a paper to begin</h2>
           </div>
           <div class="metric-strip">
@@ -119,11 +129,18 @@
 
         <section id="overviewView" class="view is-active">
           <div id="emptyState" class="empty-state">
-            <h3>Pipeline-ready frontend</h3>
+            <div class="empty-kicker">Ready for analysis</div>
+            <h3>Turn a paper and repository into an evidence map.</h3>
             <p>
               Add a PDF and a GitHub URL to run profiling, planning, extraction,
               and grounding asynchronously.
             </p>
+            <div class="empty-grid">
+              <span>Profile the paper</span>
+              <span>Extract equations and figures</span>
+              <span>Map claims to code</span>
+              <span>Flag weak evidence</span>
+            </div>
           </div>
           <div id="overviewGrid" class="overview-grid"></div>
         </section>
