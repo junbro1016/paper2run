@@ -17,6 +17,7 @@ const state = {
   file: null,
   repoUrl: savedSettings.repoUrl || "",
   apiBaseUrl: normalizeApiBaseUrl(savedSettings.apiBaseUrl),
+  request: null,
   job: null,
   result: null,
   statuses: [],
@@ -89,12 +90,14 @@ function wireEvents() {
 
   elements.pdfInput.addEventListener("change", () => {
     state.file = elements.pdfInput.files?.[0] || null;
+    syncRequestDraft();
     renderFileMeta();
     updateControls();
   });
 
   elements.repoUrl.addEventListener("input", () => {
     state.repoUrl = elements.repoUrl.value.trim();
+    syncRequestDraft();
     saveSettings();
     updateControls();
   });
@@ -203,6 +206,7 @@ function saveJobSnapshot(job = state.job) {
         status: job.status,
         filename: job.filename || state.file?.name,
         github_url: job.github_url || state.repoUrl,
+        request: state.request,
         apiBaseUrl: state.apiBaseUrl,
         overall_grounding_score: job.overall_grounding_score,
         flagged_count: job.flagged_count,
@@ -232,6 +236,11 @@ function restoreSavedJob() {
       flagged_count: saved.flagged_count,
       total_extracted: saved.total_extracted,
     };
+    state.request = saved.request || {
+      filename: saved.filename,
+      repoUrl: saved.github_url,
+      fileType: "PDF",
+    };
     state.repoUrl = saved.github_url || state.repoUrl;
     state.apiBaseUrl = normalizeApiBaseUrl(saved.apiBaseUrl || state.apiBaseUrl);
     elements.repoUrl.value = state.repoUrl;
@@ -249,6 +258,28 @@ function restoreSavedJob() {
   } catch {
     // Ignore corrupt saved job metadata.
   }
+}
+
+function syncRequestDraft() {
+  const filename = state.file?.name || state.request?.filename;
+  const repoUrl = elements.repoUrl?.value?.trim() || state.repoUrl || state.request?.repoUrl;
+  if (!filename && !repoUrl) return;
+  state.request = {
+    filename,
+    repoUrl,
+    fileSize: state.file?.size ?? state.request?.fileSize,
+    fileType: state.file?.type || state.request?.fileType || "application/pdf",
+  };
+}
+
+function captureRequestSnapshot({ filename, repoUrl, fileSize, fileType } = {}) {
+  state.request = {
+    filename: filename || state.file?.name || state.job?.filename || state.result?.filename || "paper.pdf",
+    repoUrl: repoUrl || state.repoUrl || state.job?.github_url || state.result?.github_url || "",
+    fileSize: fileSize ?? state.file?.size ?? state.request?.fileSize,
+    fileType: fileType || state.file?.type || state.request?.fileType || "application/pdf",
+  };
+  return state.request;
 }
 
 function shouldDiscardSavedJob(saved) {
@@ -310,10 +341,18 @@ function renderFileMeta() {
 }
 
 async function runPipeline() {
+  state.file = elements.pdfInput.files?.[0] || state.file;
+  state.repoUrl = elements.repoUrl.value.trim();
+  syncRequestDraft();
   if (!state.file || !state.repoUrl) return;
 
+  const request = captureRequestSnapshot();
   state.result = null;
-  state.job = null;
+  state.job = {
+    status: "processing",
+    filename: request.filename,
+    github_url: request.repoUrl,
+  };
   state.forceLanding = false;
   state.lastStageIndex = -1;
   state.polling = true;
@@ -341,7 +380,11 @@ async function runPipeline() {
       throw new Error("Pipeline response did not include a job_id.");
     }
 
-    state.job = started;
+    state.job = {
+      ...started,
+      filename: started.filename || request.filename,
+      github_url: started.github_url || request.repoUrl,
+    };
     saveJobSnapshot(started);
     addStatus(`Job started: ${started.job_id}`, "done");
     render();
@@ -351,6 +394,8 @@ async function runPipeline() {
     state.polling = false;
     state.job = {
       ...(state.job || {}),
+      filename: state.job?.filename || request.filename,
+      github_url: state.job?.github_url || request.repoUrl,
       status: "error",
       error: error.message,
     };
@@ -388,8 +433,12 @@ async function pollUntilDone(jobId) {
       throw new Error(errorMessage(job, `Job polling failed with HTTP ${response.status}`));
     }
 
-    state.job = job;
-    saveJobSnapshot(job);
+    state.job = {
+      ...job,
+      filename: job.filename || state.request?.filename,
+      github_url: job.github_url || state.request?.repoUrl,
+    };
+    saveJobSnapshot(state.job);
     logStageTransition();
     render();
 
@@ -429,6 +478,8 @@ async function fetchFullResult(jobId) {
   // values before the result view slides in, so it never snaps from 0.
   state.job = {
     ...(state.job || {}),
+    filename: state.job?.filename || state.request?.filename || result.filename,
+    github_url: state.job?.github_url || state.request?.repoUrl || result.github_url,
     status: "done",
     total_extracted: countExtracted(result),
     flagged_count: Array.isArray(result.flagged_ids) ? result.flagged_ids.length : 0,
@@ -469,6 +520,12 @@ async function loadResultJson(file) {
     const text = await file.text();
     const result = JSON.parse(text);
     const normalized = normalizeLoadedResult(result);
+    const request = captureRequestSnapshot({
+      filename: normalized.filename || file.name,
+      repoUrl: normalized.github_url || state.repoUrl,
+      fileSize: file.size,
+      fileType: file.type || "application/json",
+    });
     state.forceLanding = false;
     state.polling = false;
     state.busy = false;
@@ -477,15 +534,15 @@ async function loadResultJson(file) {
     state.job = {
       job_id: state.result.job_id || "loaded-json",
       status: state.result.status || "done",
-      filename: state.result.filename || file.name,
-      github_url: state.result.github_url,
+      filename: state.result.filename || request.filename,
+      github_url: state.result.github_url || request.repoUrl,
       overall_grounding_score: state.result.overall_grounding_score,
       flagged_count: Array.isArray(state.result.flagged_ids) ? state.result.flagged_ids.length : null,
       total_extracted: countExtracted(state.result),
     };
     state.activeTab = "overview";
     state.activeExtractionGroup = firstExtractionGroup(state.result) || "equations";
-    state.repoUrl = state.result.github_url || state.repoUrl;
+    state.repoUrl = state.result.github_url || request.repoUrl || state.repoUrl;
     elements.repoUrl.value = state.repoUrl;
     renderFileMeta();
     addStatus(`Loaded result JSON: ${file.name}`, "done");
@@ -655,6 +712,7 @@ function normalizeLegacyFigure(item, index) {
 
 function clearAll() {
   state.file = null;
+  state.request = null;
   state.job = null;
   state.result = null;
   state.statuses = [];
@@ -753,14 +811,14 @@ function currentStageIndex() {
 }
 
 function renderThreadRequest() {
-  const file = state.result?.filename || state.job?.filename || state.file?.name;
+  const file = state.result?.filename || state.job?.filename || state.request?.filename || state.file?.name;
   if (elements.threadFile) elements.threadFile.textContent = file || "paper.pdf";
   if (elements.threadFileMeta) {
-    elements.threadFileMeta.textContent = state.file
-      ? `${formatBytes(state.file.size)} · PDF`
-      : "PDF";
+    const size = state.file?.size ?? state.request?.fileSize;
+    const type = state.file?.type || state.request?.fileType || "PDF";
+    elements.threadFileMeta.textContent = size ? `${formatBytes(size)} · ${fileKindLabel(type)}` : fileKindLabel(type);
   }
-  const repo = state.result?.github_url || state.job?.github_url || state.repoUrl;
+  const repo = state.result?.github_url || state.job?.github_url || state.request?.repoUrl || state.repoUrl;
   if (elements.threadRepo) {
     elements.threadRepo.textContent = repo ? repo.replace(/^https?:\/\//, "") : "repository";
     elements.threadRepo.href = repo || "#";
@@ -782,7 +840,7 @@ function renderProcessing() {
   const isError = job?.status === "error";
 
   if (elements.procHeading) {
-    const name = job?.filename || state.file?.name;
+    const name = job?.filename || state.request?.filename || state.file?.name;
     elements.procHeading.textContent = isError
       ? "Pipeline failed"
       : `Grounding ${name || "your paper"}…`;
@@ -833,6 +891,7 @@ function renderHeader() {
   const title =
     state.result?.filename ||
     state.job?.filename ||
+    state.request?.filename ||
     state.file?.name ||
     "Upload a paper to begin";
   elements.paperTitle.textContent = title;
@@ -1498,6 +1557,13 @@ function formatBytes(bytes) {
   const kb = bytes / 1024;
   if (kb < 1024) return `${kb.toFixed(1)} KB`;
   return `${(kb / 1024).toFixed(1)} MB`;
+}
+
+function fileKindLabel(type) {
+  const value = String(type || "").toLowerCase();
+  if (value.includes("json")) return "JSON";
+  if (value.includes("pdf")) return "PDF";
+  return String(type || "file").replace(/^application\//i, "").toUpperCase();
 }
 
 function delay(ms) {
