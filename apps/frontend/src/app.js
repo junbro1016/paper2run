@@ -907,16 +907,37 @@ function renderComponentBody(item, type) {
   return parts.filter(Boolean).join("") || renderKeyValues(item);
 }
 
+function figureImageUrl(item) {
+  const metadata = normalizedMetadata(item);
+  const url = item.image_url || metadata.image_url || item.url || metadata.url || "";
+  return typeof url === "string" && /^https?:\/\//.test(url) ? url : "";
+}
+
+function figureVisual(item, caption) {
+  const url = figureImageUrl(item);
+  if (url) {
+    return `
+      <figure class="figure-image">
+        <img src="${escapeAttribute(url)}" alt="${escapeAttribute(caption)}" loading="lazy"
+          onerror="this.closest('.figure-image').dataset.broken='1'" />
+      </figure>
+    `;
+  }
+  return `
+    <div class="figure-visual" aria-hidden="true">
+      <span></span><span></span><span></span><span></span>
+      <i></i><i></i><i></i>
+    </div>
+  `;
+}
+
 function renderFigurePanel(item) {
   const metadata = normalizedMetadata(item);
   const caption = metadata.caption || item.caption || item.content || item.id || "Extracted figure";
   const insight = metadata.key_insight || item.content || item.description || "";
   return `
     <div class="figure-panel">
-      <div class="figure-visual" aria-hidden="true">
-        <span></span><span></span><span></span><span></span>
-        <i></i><i></i><i></i>
-      </div>
+      ${figureVisual(item, caption)}
       <div>
         <strong>${escapeHtml(caption)}</strong>
         ${insight ? `<p>${escapeHtml(insight)}</p>` : ""}
@@ -934,10 +955,7 @@ function renderRepresentativeFigure(figure) {
 
   return `
     <article class="representative-figure">
-      <div class="figure-visual" aria-hidden="true">
-        <span></span><span></span><span></span><span></span>
-        <i></i><i></i><i></i>
-      </div>
+      ${figureVisual(figure, caption)}
       <div>
         <div class="card-kicker">${escapeHtml(location || "Figure")}</div>
         <h3>${escapeHtml(caption)}</h3>

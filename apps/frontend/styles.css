@@ -1016,7 +1016,7 @@ body[data-stage="result"] .response-result {
 
 .code-scroll {
   display: flex;
-  max-height: 360px;
+  max-height: 320px;
   overflow: auto;
   font-family: var(--mono);
   font-size: 12.5px;
@@ -1241,6 +1241,38 @@ body[data-stage="result"] .response-result {
   margin: 0;
   color: var(--ink-soft);
   line-height: 1.55;
+}
+
+.figure-image {
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--glass-line);
+  border-radius: 18px;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.figure-image img {
+  display: block;
+  width: 100%;
+  max-height: 420px;
+  object-fit: contain;
+  background: #0b1117;
+}
+
+.figure-image[data-broken] {
+  display: grid;
+  place-items: center;
+  min-height: 160px;
+  color: var(--faint);
+  font-size: 13px;
+}
+
+.figure-image[data-broken] img {
+  display: none;
+}
+
+.figure-image[data-broken]::after {
+  content: "Figure preview unavailable";
 }
 
 .figure-visual {
@@ -1490,6 +1522,15 @@ body[data-stage="result"] .response-result {
   grid-template-columns: minmax(280px, 0.9fr) minmax(360px, 1.1fr);
   gap: 18px;
   padding: 20px;
+  align-items: start;
+}
+
+/* Keep the grounded-code column from ballooning the card when code is
+   expanded — it scrolls internally instead of stretching the paper side. */
+.evidence-code {
+  max-height: 560px;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .evidence-head,
