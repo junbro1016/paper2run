@@ -17,6 +17,23 @@
   </head>
   <body>
     <main class="app-shell">
+      <header class="app-chrome" aria-label="Application navigation">
+        <div class="chrome-brand">
+          <div class="brand-orb">P4</div>
+          <strong>Paper2Run</strong>
+        </div>
+        <nav class="chrome-nav" aria-label="Workbench sections">
+          <span class="is-active">Dashboard</span>
+          <span>Analytics</span>
+          <span>Evidence</span>
+          <span>Reports</span>
+        </nav>
+        <div class="chrome-actions">
+          <span class="live-dot">Live</span>
+          <span>EN</span>
+        </div>
+      </header>
+
       <section class="run-panel" aria-label="Pipeline controls">
         <div class="brand-row">
           <div class="brand-mark">P4DS</div>
@@ -96,7 +113,7 @@
       <section class="workspace">
         <div class="workspace-topbar">
           <span>Evidence Workbench</span>
-          <small>Profiling · Extraction · Grounding · Verification</small>
+          <small>Live pipeline orchestration · async job recovery · code-level grounding</small>
         </div>
 
         <header class="workspace-header">
@@ -129,17 +146,71 @@
 
         <section id="overviewView" class="view is-active">
           <div id="emptyState" class="empty-state">
-            <div class="empty-kicker">Ready for analysis</div>
-            <h3>Turn a paper and repository into an evidence map.</h3>
-            <p>
-              Add a PDF and a GitHub URL to run profiling, planning, extraction,
-              and grounding asynchronously.
-            </p>
-            <div class="empty-grid">
-              <span>Profile the paper</span>
-              <span>Extract equations and figures</span>
-              <span>Map claims to code</span>
-              <span>Flag weak evidence</span>
+            <div class="empty-copy">
+              <div class="empty-kicker">Ready for analysis</div>
+              <h3>Turn a paper and repository into an evidence map.</h3>
+              <p>
+                Add a PDF and a GitHub URL to run profiling, planning, extraction,
+                and grounding asynchronously.
+              </p>
+              <div class="empty-grid">
+                <span>Profile the paper</span>
+                <span>Extract equations and figures</span>
+                <span>Map claims to code</span>
+                <span>Flag weak evidence</span>
+              </div>
+            </div>
+
+            <div class="preview-dashboard" aria-hidden="true">
+              <section class="preview-card score-preview">
+                <div>
+                  <small>Evidence Score</small>
+                  <strong>Ready</strong>
+                </div>
+                <div class="score-ring"><span>0%</span></div>
+              </section>
+
+              <section class="preview-card chart-preview">
+                <div class="preview-head">
+                  <strong>Extraction Mix</strong>
+                  <small>live after run</small>
+                </div>
+                <div class="bar-chart">
+                  <span style="--h: 42%"></span>
+                  <span style="--h: 68%"></span>
+                  <span style="--h: 35%"></span>
+                  <span style="--h: 82%"></span>
+                  <span style="--h: 56%"></span>
+                  <span style="--h: 74%"></span>
+                </div>
+              </section>
+
+              <section class="report-preview">
+                <div class="report-card one">Profile</div>
+                <div class="report-card two">Ground</div>
+                <div class="report-card three">Verify</div>
+                <strong>Grounding Report</strong>
+                <p>Equations · figures · algorithms · commands</p>
+              </section>
+
+              <section class="pipeline-preview">
+                <div class="preview-head">
+                  <strong>Pipeline Stages</strong>
+                  <button type="button" tabindex="-1">Auto</button>
+                </div>
+                <div class="stage-row">
+                  <span>Profile</span>
+                  <i style="--w: 84%"></i>
+                </div>
+                <div class="stage-row">
+                  <span>Extract</span>
+                  <i style="--w: 62%"></i>
+                </div>
+                <div class="stage-row">
+                  <span>Ground</span>
+                  <i style="--w: 48%"></i>
+                </div>
+              </section>
             </div>
           </div>
           <div id="overviewGrid" class="overview-grid"></div>
