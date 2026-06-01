@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>P4DS Paper2Run Workbench</title>
+    <title>Paper2Run Terminal</title>
     <link rel="stylesheet" href="./styles.css" />
     <script>
       window.MathJax = {
@@ -15,85 +15,110 @@
     </script>
     <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
   </head>
-  <body>
-    <main class="app-shell">
-      <header class="app-chrome" aria-label="Application navigation">
-        <div class="chrome-brand">
-          <div class="brand-orb">P4</div>
-          <strong>Paper2Run</strong>
-        </div>
-        <nav class="chrome-nav" aria-label="Workbench sections">
-          <span class="is-active">Dashboard</span>
-          <span>Analytics</span>
-          <span>Evidence</span>
-          <span>Reports</span>
-        </nav>
-        <div class="chrome-actions">
-          <span class="live-dot">Live</span>
-          <span>EN</span>
-        </div>
-      </header>
+  <body data-stage="landing">
+    <div class="aurora" aria-hidden="true"></div>
 
-      <section class="run-panel" aria-label="Pipeline controls">
+    <header class="topbar" aria-label="Primary navigation">
+      <button id="brandHome" class="topbar-brand" type="button">
+        <span class="brand-glyph">P4</span>
+        <span class="brand-word">Paper2Run</span>
+      </button>
+      <nav class="topbar-nav" aria-label="Sections">
+        <span class="is-active">Workbench <em>BETA</em></span>
+        <span>Evidence</span>
+        <span>Grounding</span>
+      </nav>
+      <div class="topbar-actions">
+        <span class="live-pill"><i></i>Live</span>
+        <span class="lang-pill">EN</span>
+      </div>
+    </header>
+
+    <!-- ============ LANDING ============ -->
+    <section class="landing" aria-label="Start a pipeline run">
+      <span class="hero-badge"><b>New</b> ✦ Paper2Run Terminal</span>
+      <h1 class="hero-title">What paper should we ground today?</h1>
+      <p class="hero-sub">
+        Extract equations and figures, map every claim to real code, and review the
+        evidence — async, end to end.
+      </p>
+
+      <form id="runForm" class="composer">
+        <label class="composer-drop" for="pdfInput">
+          <span class="composer-drop-icon" aria-hidden="true">⇪</span>
+          <span class="composer-drop-text">
+            <strong id="fileName">Drop a paper PDF, or click to browse</strong>
+            <small id="fileMeta">No file selected yet.</small>
+          </span>
+        </label>
+        <input id="pdfInput" class="visually-hidden" type="file" accept="application/pdf" />
+
+        <div class="composer-repo">
+          <span class="composer-repo-icon" aria-hidden="true">⎇</span>
+          <input
+            id="repoUrl"
+            type="url"
+            placeholder="Paste a public GitHub repository — https://github.com/owner/repo"
+            autocomplete="off"
+            required
+          />
+        </div>
+
+        <div class="composer-bar">
+          <div class="composer-chips">
+            <span class="composer-chip is-primary">
+              <span class="chip-dot" aria-hidden="true"></span>Paper2Run Pipeline
+            </span>
+
+            <details class="composer-chip advanced-settings" id="advancedSettings">
+              <summary>⚙ API</summary>
+              <div class="advanced-pop">
+                <label for="apiBaseUrl">Pipeline API endpoint</label>
+                <div class="inline-input">
+                  <input id="apiBaseUrl" type="url" autocomplete="off" required />
+                  <button id="healthBtn" class="ghost-button" type="button">Check</button>
+                </div>
+                <small id="apiHealth" class="field-note">Used for debugging or local backend overrides.</small>
+              </div>
+            </details>
+
+            <label class="composer-chip upload-json" for="jsonInput">⤓ Load Result JSON</label>
+            <input id="jsonInput" class="visually-hidden" type="file" accept="application/json" />
+
+            <button id="clearBtn" class="composer-chip" type="button">Clear</button>
+          </div>
+
+          <button id="runBtn" class="composer-run" type="submit" aria-label="Run pipeline">
+            <span aria-hidden="true">↑</span>
+          </button>
+        </div>
+      </form>
+
+      <div class="suggestions" aria-label="Example runs">
+        <button class="suggestion" type="button" data-repo="https://github.com/tensorflow/tensor2tensor">
+          Attention Is All You Need · tensor2tensor
+        </button>
+        <button class="suggestion" type="button" data-repo="https://github.com/hojonathanho/diffusion">
+          Denoising Diffusion · hojonathanho
+        </button>
+        <button class="suggestion" type="button" data-repo="">
+          Map equations &amp; figures to code
+        </button>
+      </div>
+    </section>
+
+    <!-- ============ WORKBENCH ============ -->
+    <main class="app-shell">
+      <section class="run-panel" aria-label="Run status">
         <div class="brand-row">
           <div class="brand-mark">P4DS</div>
           <div>
             <h1>Paper2Run Workbench</h1>
-            <p>Extract paper components, ground them in code, and review evidence quality.</p>
+            <p>Live pipeline orchestration · async job recovery · code-level grounding.</p>
           </div>
         </div>
 
-        <form id="runForm" class="run-form">
-          <div class="form-heading">
-            <span>Pipeline input</span>
-            <small>PDF + public GitHub repository</small>
-          </div>
-
-          <div class="field">
-            <label for="pdfInput">Paper PDF</label>
-            <label class="file-drop" for="pdfInput">
-              <span id="fileName">Choose a PDF file</span>
-              <small id="fileMeta">No file selected yet.</small>
-            </label>
-            <input id="pdfInput" class="visually-hidden" type="file" accept="application/pdf" />
-          </div>
-
-          <div class="field">
-            <label for="repoUrl">GitHub Repository</label>
-            <input
-              id="repoUrl"
-              type="url"
-              placeholder="https://github.com/owner/repo"
-              autocomplete="off"
-              required
-            />
-          </div>
-
-          <details class="advanced-settings">
-            <summary>Advanced API settings</summary>
-            <div class="field">
-              <label for="apiBaseUrl">Pipeline API</label>
-              <div class="inline-input">
-                <input id="apiBaseUrl" type="url" autocomplete="off" required />
-                <button id="healthBtn" class="secondary-button" type="button">Check</button>
-              </div>
-              <small id="apiHealth" class="field-note">Used for debugging or local backend overrides.</small>
-            </div>
-          </details>
-
-          <div class="button-row">
-            <button id="runBtn" class="primary-button" type="submit">Run Pipeline</button>
-            <button id="clearBtn" class="secondary-button" type="button">Clear</button>
-          </div>
-
-          <div class="button-row">
-            <label class="secondary-button upload-json" for="jsonInput">Load Result JSON</label>
-            <input id="jsonInput" class="visually-hidden" type="file" accept="application/json" />
-            <button id="downloadBtn" class="secondary-button" type="button" disabled>
-              Download Result
-            </button>
-          </div>
-        </form>
+        <button id="newRunBtn" class="primary-button" type="button">＋ New analysis</button>
 
         <section class="job-card" aria-live="polite">
           <div class="section-label">Job</div>
@@ -108,6 +133,10 @@
           <div class="section-label">Activity</div>
           <ol id="statusList" class="status-list"></ol>
         </section>
+
+        <button id="downloadBtn" class="secondary-button" type="button" disabled>
+          ⤓ Download Result JSON
+        </button>
       </section>
 
       <section class="workspace">
@@ -147,11 +176,11 @@
         <section id="overviewView" class="view is-active">
           <div id="emptyState" class="empty-state">
             <div class="empty-copy">
-              <div class="empty-kicker">Ready for analysis</div>
-              <h3>Turn a paper and repository into an evidence map.</h3>
+              <div class="empty-kicker">Pipeline running</div>
+              <h3>Profiling, planning, extracting, and grounding your paper.</h3>
               <p>
-                Add a PDF and a GitHub URL to run profiling, planning, extraction,
-                and grounding asynchronously.
+                The pipeline runs asynchronously — equations, figures, algorithms, and
+                commands are mapped to code as the job completes.
               </p>
               <div class="empty-grid">
                 <span>Profile the paper</span>
@@ -165,7 +194,7 @@
               <section class="preview-card score-preview">
                 <div>
                   <small>Evidence Score</small>
-                  <strong>Ready</strong>
+                  <strong>Live</strong>
                 </div>
                 <div class="score-ring"><span>0%</span></div>
               </section>

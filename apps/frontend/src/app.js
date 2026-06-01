@@ -28,6 +28,10 @@ const state = {
 };
 
 const elements = {
+  body: document.body,
+  brandHome: document.querySelector("#brandHome"),
+  newRunBtn: document.querySelector("#newRunBtn"),
+  suggestions: [...document.querySelectorAll(".suggestion")],
   runForm: document.querySelector("#runForm"),
   pdfInput: document.querySelector("#pdfInput"),
   fileName: document.querySelector("#fileName"),
@@ -92,6 +96,25 @@ function wireEvents() {
   elements.healthBtn.addEventListener("click", () => checkHealth());
   elements.clearBtn.addEventListener("click", clearAll);
   elements.downloadBtn.addEventListener("click", downloadResult);
+
+  elements.newRunBtn?.addEventListener("click", () => goToLanding());
+  elements.brandHome?.addEventListener("click", () => {
+    if (!state.busy) goToLanding();
+  });
+
+  elements.suggestions.forEach((button) => {
+    button.addEventListener("click", () => {
+      const repo = button.dataset.repo || "";
+      if (repo) {
+        state.repoUrl = repo;
+        elements.repoUrl.value = repo;
+        saveSettings();
+        updateControls();
+      }
+      elements.repoUrl.focus();
+      if (!state.file) elements.pdfInput.click();
+    });
+  });
 
   elements.jsonInput.addEventListener("change", () => {
     const file = elements.jsonInput.files?.[0];
@@ -433,7 +456,18 @@ function downloadResult() {
   URL.revokeObjectURL(url);
 }
 
+function goToLanding() {
+  document.body.dataset.stage = "landing";
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function renderStage() {
+  const inWorkbench = Boolean(state.busy || state.job || state.result);
+  document.body.dataset.stage = inWorkbench ? "workbench" : "landing";
+}
+
 function render() {
+  renderStage();
   renderStatus();
   renderJob();
   renderHeader();
