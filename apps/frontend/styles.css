@@ -173,6 +173,25 @@ small {
   gap: 10px;
 }
 
+.advanced-settings {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.advanced-settings summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.advanced-settings[open] {
+  display: grid;
+  gap: 12px;
+}
+
 .field label:first-child {
   font-size: 12px;
   font-weight: 800;

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ko">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -22,7 +22,7 @@
           <div class="brand-mark">P4DS</div>
           <div>
             <h1>Paper2Run Console</h1>
-            <p>PDF와 GitHub 저장소를 연결해 실행 가능한 근거를 찾습니다.</p>
+            <p>Connect a paper PDF to a GitHub repository and inspect runnable evidence.</p>
           </div>
         </div>
 
@@ -30,8 +30,8 @@
           <div class="field">
             <label for="pdfInput">Paper PDF</label>
             <label class="file-drop" for="pdfInput">
-              <span id="fileName">PDF 파일 선택</span>
-              <small id="fileMeta">아직 선택된 파일이 없습니다.</small>
+              <span id="fileName">Choose a PDF file</span>
+              <small id="fileMeta">No file selected yet.</small>
             </label>
             <input id="pdfInput" class="visually-hidden" type="file" accept="application/pdf" />
           </div>
@@ -47,14 +47,17 @@
             />
           </div>
 
-          <div class="field">
-            <label for="apiBaseUrl">Pipeline API</label>
-            <div class="inline-input">
-              <input id="apiBaseUrl" type="url" autocomplete="off" required />
-              <button id="healthBtn" class="secondary-button" type="button">Check</button>
+          <details class="advanced-settings">
+            <summary>Advanced API settings</summary>
+            <div class="field">
+              <label for="apiBaseUrl">Pipeline API</label>
+              <div class="inline-input">
+                <input id="apiBaseUrl" type="url" autocomplete="off" required />
+                <button id="healthBtn" class="secondary-button" type="button">Check</button>
+              </div>
+              <small id="apiHealth" class="field-note">Used for debugging or local backend overrides.</small>
             </div>
-            <small id="apiHealth" class="field-note">Pipeline API 상태를 확인할 수 있습니다.</small>
-          </div>
+          </details>
 
           <div class="button-row">
             <button id="runBtn" class="primary-button" type="submit">Run Pipeline</button>
@@ -73,7 +76,7 @@
         <section class="job-card" aria-live="polite">
           <div class="section-label">Job</div>
           <div id="jobState" class="job-state is-idle">Idle</div>
-          <div id="jobMeta" class="job-meta">새 작업을 시작하면 job_id와 상태가 여기에 표시됩니다.</div>
+          <div id="jobMeta" class="job-meta">Start a run to see the job id and current status.</div>
           <div class="progress-track" aria-label="Grounding score">
             <div id="scoreBar" class="progress-fill"></div>
           </div>
@@ -89,7 +92,7 @@
         <header class="workspace-header">
           <div>
             <p class="eyebrow">Full Pipeline Result</p>
-            <h2 id="paperTitle">분석할 논문을 업로드하세요</h2>
+            <h2 id="paperTitle">Upload a paper to begin</h2>
           </div>
           <div class="metric-strip">
             <div>
@@ -118,8 +121,8 @@
           <div id="emptyState" class="empty-state">
             <h3>Pipeline-ready frontend</h3>
             <p>
-              PDF와 GitHub URL을 입력하면 API가 profiling, planning, extraction,
-              grounding을 비동기로 실행합니다.
+              Add a PDF and a GitHub URL to run profiling, planning, extraction,
+              and grounding asynchronously.
             </p>
           </div>
           <div id="overviewGrid" class="overview-grid"></div>

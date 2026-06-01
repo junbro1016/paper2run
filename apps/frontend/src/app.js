@@ -57,7 +57,6 @@ elements.apiBaseUrl.value = state.apiBaseUrl;
 
 wireEvents();
 render();
-checkHealth({ silent: true });
 
 function wireEvents() {
   elements.runForm.addEventListener("submit", (event) => {
@@ -151,7 +150,7 @@ function addStatus(label, stateName = "pending") {
 
 function renderStatus() {
   if (!state.statuses.length) {
-    elements.statusList.innerHTML = `<li>작업 로그가 여기에 표시됩니다.</li>`;
+    elements.statusList.innerHTML = `<li>Run activity will appear here.</li>`;
     return;
   }
   elements.statusList.innerHTML = state.statuses
@@ -177,8 +176,8 @@ function updateControls() {
 
 function renderFileMeta() {
   if (!state.file) {
-    elements.fileName.textContent = "PDF 파일 선택";
-    elements.fileMeta.textContent = "아직 선택된 파일이 없습니다.";
+    elements.fileName.textContent = "Choose a PDF file";
+    elements.fileMeta.textContent = "No file selected yet.";
     return;
   }
   elements.fileName.textContent = state.file.name;
@@ -251,7 +250,7 @@ async function pollUntilDone(jobId) {
     }
 
     if (job.status === "error") {
-      throw new Error(job.error || "Pipeline job failed.");
+      throw new Error(`Backend pipeline failed: ${job.error || "Pipeline job failed."}`);
     }
 
     addStatus(statusLine(job), "pending");
@@ -360,7 +359,7 @@ function renderJob() {
   elements.jobState.className = `job-state is-${status}`;
 
   if (!job) {
-    elements.jobMeta.textContent = "새 작업을 시작하면 job_id와 상태가 여기에 표시됩니다.";
+    elements.jobMeta.textContent = "Start a run to see the job id and current status.";
   } else {
     const parts = [
       job.job_id ? `job_id: ${job.job_id}` : "",
@@ -380,7 +379,7 @@ function renderHeader() {
     state.result?.filename ||
     state.job?.filename ||
     state.file?.name ||
-    "분석할 논문을 업로드하세요";
+    "Upload a paper to begin";
   elements.paperTitle.textContent = title;
 
   const score = scoreFromState();
