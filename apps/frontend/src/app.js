@@ -41,6 +41,7 @@ const elements = {
   threadRepo: document.querySelector("#threadRepo"),
   procHeading: document.querySelector("#procHeading"),
   procStatus: document.querySelector("#procStatus"),
+  procMeta: document.querySelector("#procMeta"),
   procBackBtn: document.querySelector("#procBackBtn"),
   runForm: document.querySelector("#runForm"),
   pdfInput: document.querySelector("#pdfInput"),
@@ -527,6 +528,40 @@ function renderStage() {
     stage = "landing";
   }
   document.body.dataset.stage = stage;
+
+  if (stage === "processing") startProcTimer();
+  else stopProcTimer();
+}
+
+let procTimer = null;
+
+function startProcTimer() {
+  if (procTimer) return;
+  updateProcMeta();
+  procTimer = window.setInterval(updateProcMeta, 1000);
+}
+
+function stopProcTimer() {
+  if (!procTimer) return;
+  window.clearInterval(procTimer);
+  procTimer = null;
+}
+
+// A quiet elapsed-time line so a slow backend never looks frozen.
+function updateProcMeta() {
+  if (!elements.procMeta) return;
+  if (state.job?.status === "error") {
+    elements.procMeta.textContent = "";
+    return;
+  }
+  const started = state.pollStartedAt || Date.now();
+  const seconds = Math.max(0, Math.floor((Date.now() - started) / 1000));
+  const clock = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+  const note =
+    seconds > 90
+      ? "Still working — large repositories can take a few minutes."
+      : "This runs asynchronously; results appear automatically.";
+  elements.procMeta.textContent = `${clock} elapsed · ${note}`;
 }
 
 // The polling payload has no explicit stage field, so infer the current

@@ -740,6 +740,13 @@ body[data-stage="result"] .response-result {
   color: var(--red);
 }
 
+.proc-meta {
+  margin: 2px 0 0;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
 /* Calm shimmer skeleton — implies work without faking progress. */
 .proc-shimmer {
   display: grid;
