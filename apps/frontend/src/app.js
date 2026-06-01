@@ -831,10 +831,12 @@ function componentNumber(item, index) {
 
 function componentTitle(item, type, index) {
   const metadata = normalizedMetadata(item);
-  // Equations are rendered as typeset math below, so the title is a clean
-  // label instead of raw LaTeX.
+  // Keep titles short — the full caption / math is shown in the card body.
   if (type === "equation") {
     return `Equation ${componentNumber(item, index)}`;
+  }
+  if (type === "figure") {
+    return `Figure ${componentNumber(item, index)}`;
   }
   return (
     metadata.algorithm_name ||
