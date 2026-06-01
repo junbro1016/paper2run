@@ -409,10 +409,28 @@ function renderOverview() {
   elements.emptyState.style.display = "none";
   const profile = state.result.profile || state.job?.profile_summary || {};
   const plan = Array.isArray(state.result.plan) ? state.result.plan : state.job?.plan_summary || [];
+  const overviewStats = [
+    ["Paper Type", profile.paper_type],
+    ["Trajectory", profile.trajectory],
+    ["Layout", profile.layout],
+    ["Pages", profile.page_count],
+    ["Difficulty", profile.difficulty_score],
+    ["Formalism", profile.formalism_role],
+  ].filter(([, value]) => value != null && value !== "");
 
   elements.overviewGrid.innerHTML = [
-    infoCard("Profile", renderKeyValues(profile)),
-    infoCard("Run Summary", renderKeyValues(summaryObject())),
+    infoCard(
+      "Profile",
+      `
+        <div class="profile-hero">
+          <p>${escapeHtml(profile.reasoning || "No profile reasoning reported yet.")}</p>
+          <div class="pill-row">${overviewStats.map(([key, value]) => metricPill(key, value)).join("")}</div>
+        </div>
+        ${renderKeyValues({ sections_present: profile.sections_present })}
+      `,
+      "is-wide is-profile",
+    ),
+    infoCard("Run Summary", renderKeyValues(summaryObject()), "is-summary"),
     infoCard("Plan", renderPlan(plan), "is-wide"),
   ].join("");
 }
@@ -434,7 +452,7 @@ function renderExtractions() {
       ([key, items]) =>
         `<button class="subtab ${key === state.activeExtractionGroup ? "is-active" : ""}" type="button" data-group="${escapeHtml(
           key,
-        )}">${escapeHtml(formatKey(key))} · ${items.length}</button>`,
+        )}">${escapeHtml(formatExtractorType(key))} · ${items.length}</button>`,
     )
     .join("");
 
@@ -485,26 +503,35 @@ function renderRuntime() {
 }
 
 function renderComponentCard(item, index) {
+  const metadata = item.metadata && typeof item.metadata === "object" ? item.metadata : {};
+  const location = item.location && typeof item.location === "object" ? item.location : {};
   const title =
     item.algorithm_name ||
     item.command_type ||
     item.figure_id ||
     item.caption ||
+    item.content ||
     item.role ||
     item.id ||
     `Item ${index + 1}`;
   const meta = [
     item.id ? `id ${item.id}` : "",
+    item.type ? `type ${item.type}` : "",
     item.page != null ? `page ${item.page}` : "",
+    location.page != null ? `page ${location.page}` : "",
+    location.section ? `section ${location.section}` : "",
     item.confidence != null ? `confidence ${formatPercent(item.confidence)}` : "",
     item.role ? `role ${item.role}` : "",
+    metadata.role_label ? `role ${metadata.role_label}` : "",
     item.figure_type ? `type ${item.figure_type}` : "",
     item.framework ? `framework ${item.framework}` : "",
   ].filter(Boolean);
 
   const body = [
+    metadata.latex ? `<div class="latex">\\[${escapeHtml(metadata.latex)}\\]</div>` : "",
     item.latex ? `<div class="latex">\\[${escapeHtml(item.latex)}\\]</div>` : "",
     item.raw_command ? `<pre class="code-block">${escapeHtml(item.raw_command)}</pre>` : "",
+    item.content ? `<div class="text-block">${escapeHtml(item.content)}</div>` : "",
     item.steps_summary ? `<div class="text-block">${escapeHtml(item.steps_summary)}</div>` : "",
     item.description ? `<div class="text-block">${escapeHtml(item.description)}</div>` : "",
     item.caption ? `<div class="text-block">${escapeHtml(item.caption)}</div>` : "",
@@ -516,6 +543,7 @@ function renderComponentCard(item, index) {
 
   return `
     <article class="component-card">
+      <div class="card-kicker">${escapeHtml(formatExtractorType(item.type || state.activeExtractionGroup))}</div>
       <h3>${escapeHtml(String(title).slice(0, 140))}</h3>
       <div class="component-meta">${escapeHtml(meta.join(" · ") || "extracted component")}</div>
       <div class="component-body">${body || renderKeyValues(item)}</div>
@@ -528,8 +556,16 @@ function renderMappingCard(mapping) {
   const component = findComponent(mapping.component_id);
   const matches = Array.isArray(mapping.matches) ? mapping.matches : [];
   const componentTitle = component
-    ? component.caption || component.description || component.algorithm_name || component.raw_command || component.id
+    ? component.caption ||
+      component.description ||
+      component.algorithm_name ||
+      component.raw_command ||
+      component.content ||
+      component.id
     : mapping.component_id;
+  const bestConfidence = matches.length
+    ? Math.max(...matches.map((match) => Number(match.confidence) || 0))
+    : 0;
 
   return `
     <article class="mapping-card" data-status="${escapeHtml(status)}">
@@ -540,17 +576,27 @@ function renderMappingCard(mapping) {
         </div>
         <span class="status-badge" data-status="${escapeHtml(status)}">${escapeHtml(status)}</span>
       </div>
-      ${
-        mapping.reviewer_note
-          ? `<div class="text-block">${escapeHtml(mapping.reviewer_note)}</div>`
-          : ""
-      }
-      <div class="match-list">
-        ${
-          matches.length
-            ? matches.map((match) => renderMatch(match)).join("")
-            : `<div class="empty-note">No match found.</div>`
-        }
+      <div class="mapping-grid">
+        <section class="paper-pane">
+          <div class="pane-label">Paper component</div>
+          <p>${escapeHtml(String(componentTitle || "No component preview").slice(0, 420))}</p>
+          ${component ? `<div class="component-meta">${escapeHtml(componentMeta(component))}</div>` : ""}
+        </section>
+        <section class="code-pane">
+          <div class="pane-label">Code grounding · ${escapeHtml(formatPercent(bestConfidence))}</div>
+          ${
+            mapping.reviewer_note
+              ? `<div class="text-block">${escapeHtml(mapping.reviewer_note)}</div>`
+              : ""
+          }
+          <div class="match-list">
+            ${
+              matches.length
+                ? matches.map((match) => renderMatch(match)).join("")
+                : `<div class="empty-note">No match found.</div>`
+            }
+          </div>
+        </section>
       </div>
     </article>
   `;
@@ -633,7 +679,7 @@ function renderKeyValues(object) {
           ([key, value]) => `
             <div class="kv-item">
               <small>${escapeHtml(formatKey(key))}</small>
-              <span>${escapeHtml(formatValue(value))}</span>
+              ${formatStructuredValue(value)}
             </div>
           `,
         )
@@ -658,7 +704,7 @@ function extractionGroups(result) {
   const extractions = result?.extractions;
   if (!extractions || typeof extractions !== "object") return [];
   return Object.entries(extractions)
-    .map(([key, value]) => [key, Array.isArray(value) ? value : []])
+    .map(([key, value]) => [key, extractionItems(value)])
     .filter(([, value]) => value.length);
 }
 
@@ -688,6 +734,30 @@ function findComponent(componentId) {
 
 function countExtracted(result) {
   return extractionGroups(result).reduce((sum, [, items]) => sum + items.length, 0);
+}
+
+function extractionItems(value) {
+  if (Array.isArray(value)) return value;
+  if (!value || typeof value !== "object") return [];
+  if (Array.isArray(value.items)) return value.items;
+  if (Array.isArray(value.results)) return value.results;
+  if (Array.isArray(value.extractions)) return value.extractions;
+  return [];
+}
+
+function componentMeta(component) {
+  const location = component.location && typeof component.location === "object" ? component.location : {};
+  const metadata = component.metadata && typeof component.metadata === "object" ? component.metadata : {};
+  return [
+    component.id,
+    component.type,
+    location.section,
+    location.page != null ? `page ${location.page}` : "",
+    metadata.role_label,
+    component.confidence != null ? `confidence ${formatPercent(component.confidence)}` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 function scoreFromState() {
@@ -738,6 +808,36 @@ function formatValue(value) {
   if (typeof value === "object" && value !== null) return JSON.stringify(value);
   if (typeof value === "number" && value >= 0 && value <= 1) return formatPercent(value);
   return String(value);
+}
+
+function formatStructuredValue(value) {
+  if (Array.isArray(value)) {
+    const visible = value.slice(0, 12);
+    const extra = value.length - visible.length;
+    return `
+      <div class="chip-list">
+        ${visible.map((item) => `<span class="chip">${escapeHtml(formatValue(item))}</span>`).join("")}
+        ${extra > 0 ? `<span class="chip is-muted">+${extra}</span>` : ""}
+      </div>
+    `;
+  }
+  if (typeof value === "object" && value !== null) {
+    return `<pre class="inline-json">${escapeHtml(JSON.stringify(value, null, 2))}</pre>`;
+  }
+  return `<span>${escapeHtml(formatValue(value))}</span>`;
+}
+
+function metricPill(label, value) {
+  return `
+    <span class="metric-pill">
+      <small>${escapeHtml(label)}</small>
+      <strong>${escapeHtml(formatValue(value))}</strong>
+    </span>
+  `;
+}
+
+function formatExtractorType(key) {
+  return String(key).replace(/_extractor$/, "").replaceAll("_", " ");
 }
 
 function formatPercent(value) {
