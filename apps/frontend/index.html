@@ -5,6 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Paper2Run Terminal</title>
     <link rel="stylesheet" href="./styles.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github-dark.min.css"
+    />
+    <script defer src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
     <script>
       window.MathJax = {
         tex: {
@@ -107,204 +112,130 @@
       </div>
     </section>
 
-    <!-- ============ PROCESSING ============ -->
-    <section class="processing" aria-label="Pipeline running" aria-live="polite">
-      <span class="hero-badge proc-badge"><i class="proc-spin" aria-hidden="true"></i> Analyzing</span>
-      <h1 class="hero-title" id="procTitle">Grounding your paper…</h1>
-      <p class="hero-sub" id="procSub">
-        Profiling, extracting, and mapping every claim to code. This runs
-        asynchronously — you can keep watching right here.
-      </p>
-
-      <div class="proc-panel">
-        <div class="proc-stages" aria-hidden="true">
-          <span class="proc-stage" style="--i: 0">Profile</span>
-          <span class="proc-stage" style="--i: 1">Extract</span>
-          <span class="proc-stage" style="--i: 2">Ground</span>
-          <span class="proc-stage" style="--i: 3">Verify</span>
-        </div>
-
-        <div class="proc-stats">
-          <div><span id="procExtracted">0</span><small>Extracted</small></div>
-          <div><span id="procFlagged">0</span><small>Flagged</small></div>
-          <div><span id="procScore">—</span><small>Grounding</small></div>
-        </div>
-
-        <div class="proc-progress">
-          <div class="proc-progress-head">
-            <span id="procStatus">Starting pipeline…</span>
+    <!-- ============ THREAD (processing + result) ============ -->
+    <main class="thread" aria-label="Analysis thread">
+      <!-- Request bubble -->
+      <section class="thread-turn is-request">
+        <div class="turn-avatar is-user">YOU</div>
+        <div class="turn-bubble request-card">
+          <div class="request-row">
+            <span class="request-icon" aria-hidden="true">📄</span>
+            <div class="request-text">
+              <strong id="threadFile">paper.pdf</strong>
+              <small id="threadFileMeta">PDF</small>
+            </div>
           </div>
-          <div class="progress-track is-running">
-            <div id="procBar" class="progress-fill"></div>
+          <div class="request-row">
+            <span class="request-icon" aria-hidden="true">⎇</span>
+            <a id="threadRepo" class="request-repo-link" target="_blank" rel="noreferrer">repository</a>
           </div>
         </div>
-
-        <ol id="procActivity" class="status-list proc-activity"></ol>
-
-        <div class="proc-actions">
-          <button id="procBackBtn" class="ghost-button" type="button">← Back to start</button>
-          <small>Your job keeps running even if you leave.</small>
-        </div>
-      </div>
-    </section>
-
-    <!-- ============ WORKBENCH ============ -->
-    <main class="app-shell">
-      <section class="run-panel" aria-label="Run status">
-        <div class="brand-row">
-          <div class="brand-mark">P4DS</div>
-          <div>
-            <h1>Paper2Run Workbench</h1>
-            <p>Live pipeline orchestration · async job recovery · code-level grounding.</p>
-          </div>
-        </div>
-
-        <button id="newRunBtn" class="primary-button" type="button">＋ New analysis</button>
-
-        <section class="job-card" aria-live="polite">
-          <div class="section-label">Job</div>
-          <div id="jobState" class="job-state is-idle">Idle</div>
-          <div id="jobMeta" class="job-meta">Start a run to see the job id and current status.</div>
-          <div class="progress-track" aria-label="Grounding score">
-            <div id="scoreBar" class="progress-fill"></div>
-          </div>
-        </section>
-
-        <section class="status-card">
-          <div class="section-label">Activity</div>
-          <ol id="statusList" class="status-list"></ol>
-        </section>
-
-        <button id="downloadBtn" class="secondary-button" type="button" disabled>
-          ⤓ Download Result JSON
-        </button>
       </section>
 
-      <section class="workspace">
-        <div class="workspace-topbar">
-          <span>Evidence Workbench</span>
-          <small>Live pipeline orchestration · async job recovery · code-level grounding</small>
-        </div>
-
-        <header class="workspace-header">
-          <div>
-            <p class="eyebrow">Pipeline Result</p>
-            <h2 id="paperTitle">Upload a paper to begin</h2>
-          </div>
-          <div class="metric-strip">
-            <div>
-              <span id="scoreMetric">-</span>
-              <small>Grounding</small>
+      <!-- Response bubble -->
+      <section class="thread-turn is-response">
+        <div class="turn-avatar is-agent">P4</div>
+        <div class="turn-bubble response-card">
+          <!-- ---- PROCESSING ---- -->
+          <div class="response-processing">
+            <div class="response-head">
+              <span class="hero-badge proc-badge"><i class="proc-spin" aria-hidden="true"></i> Analyzing</span>
+              <button id="procBackBtn" class="ghost-button" type="button">Cancel</button>
             </div>
-            <div>
-              <span id="extractedMetric">0</span>
-              <small>Extracted</small>
-            </div>
-            <div>
-              <span id="flaggedMetric">0</span>
-              <small>Flagged</small>
-            </div>
-          </div>
-        </header>
 
-        <nav class="tabs" aria-label="Result views">
-          <button class="tab is-active" type="button" data-tab="overview">Overview</button>
-          <button class="tab" type="button" data-tab="extractions">Extractions</button>
-          <button class="tab" type="button" data-tab="grounding">Grounding</button>
-          <button class="tab" type="button" data-tab="runtime">Runtime</button>
-        </nav>
+            <ol class="proc-steps" id="procSteps">
+              <li data-step="0">
+                <span class="step-mark" aria-hidden="true"></span>
+                <div><strong>Profile</strong><small>Read structure &amp; sections</small></div>
+              </li>
+              <li data-step="1">
+                <span class="step-mark" aria-hidden="true"></span>
+                <div><strong>Extract</strong><small>Equations, figures, algorithms</small></div>
+              </li>
+              <li data-step="2">
+                <span class="step-mark" aria-hidden="true"></span>
+                <div><strong>Ground</strong><small>Map claims to repository code</small></div>
+              </li>
+              <li data-step="3">
+                <span class="step-mark" aria-hidden="true"></span>
+                <div><strong>Verify</strong><small>Score &amp; flag evidence</small></div>
+              </li>
+            </ol>
 
-        <section id="overviewView" class="view is-active">
-          <div id="emptyState" class="empty-state">
-            <div class="empty-copy">
-              <div class="empty-kicker">Pipeline running</div>
-              <h3>Profiling, planning, extracting, and grounding your paper.</h3>
-              <p>
-                The pipeline runs asynchronously — equations, figures, algorithms, and
-                commands are mapped to code as the job completes.
-              </p>
-              <div class="empty-grid">
-                <span>Profile the paper</span>
-                <span>Extract equations and figures</span>
-                <span>Map claims to code</span>
-                <span>Flag weak evidence</span>
+            <div class="proc-stats">
+              <div><span id="procExtracted">0</span><small>Extracted</small></div>
+              <div><span id="procFlagged">0</span><small>Flagged</small></div>
+              <div><span id="procScore">—</span><small>Grounding</small></div>
+            </div>
+
+            <div class="proc-progress">
+              <div class="proc-progress-head">
+                <span id="procStatus">Starting pipeline…</span>
+              </div>
+              <div class="progress-track is-running">
+                <div id="procBar" class="progress-fill"></div>
               </div>
             </div>
 
-            <div class="preview-dashboard" aria-hidden="true">
-              <section class="preview-card score-preview">
-                <div>
-                  <small>Evidence Score</small>
-                  <strong>Live</strong>
-                </div>
-                <div class="score-ring"><span>0%</span></div>
-              </section>
-
-              <section class="preview-card chart-preview">
-                <div class="preview-head">
-                  <strong>Extraction Mix</strong>
-                  <small>live after run</small>
-                </div>
-                <div class="bar-chart">
-                  <span style="--h: 42%"></span>
-                  <span style="--h: 68%"></span>
-                  <span style="--h: 35%"></span>
-                  <span style="--h: 82%"></span>
-                  <span style="--h: 56%"></span>
-                  <span style="--h: 74%"></span>
-                </div>
-              </section>
-
-              <section class="report-preview">
-                <div class="report-card one">Profile</div>
-                <div class="report-card two">Ground</div>
-                <div class="report-card three">Verify</div>
-                <strong>Grounding Report</strong>
-                <p>Equations · figures · algorithms · commands</p>
-              </section>
-
-              <section class="pipeline-preview">
-                <div class="preview-head">
-                  <strong>Pipeline Stages</strong>
-                  <button type="button" tabindex="-1">Auto</button>
-                </div>
-                <div class="stage-row">
-                  <span>Profile</span>
-                  <i style="--w: 84%"></i>
-                </div>
-                <div class="stage-row">
-                  <span>Extract</span>
-                  <i style="--w: 62%"></i>
-                </div>
-                <div class="stage-row">
-                  <span>Ground</span>
-                  <i style="--w: 48%"></i>
-                </div>
-              </section>
-            </div>
+            <details class="proc-log">
+              <summary>Activity log</summary>
+              <ol id="statusList" class="status-list"></ol>
+            </details>
           </div>
-          <div id="overviewGrid" class="overview-grid"></div>
-        </section>
 
-        <section id="extractionsView" class="view">
-          <div id="extractionTabs" class="subtabs"></div>
-          <div id="extractionList" class="component-list"></div>
-        </section>
+          <!-- ---- RESULT ---- -->
+          <div class="response-result">
+            <header class="result-head">
+              <div class="result-headline">
+                <p class="eyebrow">Pipeline result <span id="jobState" class="job-state is-idle">Idle</span></p>
+                <h2 id="paperTitle">Upload a paper to begin</h2>
+                <div id="jobMeta" class="job-meta"></div>
+              </div>
+              <div class="metric-strip">
+                <div><span id="scoreMetric">-</span><small>Grounding</small></div>
+                <div><span id="extractedMetric">0</span><small>Extracted</small></div>
+                <div><span id="flaggedMetric">0</span><small>Flagged</small></div>
+              </div>
+            </header>
 
-        <section id="groundingView" class="view">
-          <div class="toolbar">
-            <label class="toggle-row">
-              <input id="flaggedOnly" type="checkbox" />
-              Flagged only
-            </label>
-            <div id="mappingSummary" class="toolbar-note">No mappings yet.</div>
+            <nav class="tabs" aria-label="Result views">
+              <button class="tab is-active" type="button" data-tab="overview">Overview</button>
+              <button class="tab" type="button" data-tab="extractions">Extractions</button>
+              <button class="tab" type="button" data-tab="grounding">Grounding</button>
+              <button class="tab" type="button" data-tab="runtime">Runtime</button>
+            </nav>
+
+            <section id="overviewView" class="view is-active">
+              <div id="emptyState" class="visually-hidden"></div>
+              <div id="overviewGrid" class="overview-grid"></div>
+            </section>
+
+            <section id="extractionsView" class="view">
+              <div id="extractionTabs" class="subtabs"></div>
+              <div id="extractionList" class="component-list"></div>
+            </section>
+
+            <section id="groundingView" class="view">
+              <div class="toolbar">
+                <label class="toggle-row">
+                  <input id="flaggedOnly" type="checkbox" />
+                  Flagged only
+                </label>
+                <div id="mappingSummary" class="toolbar-note">No mappings yet.</div>
+              </div>
+              <div id="mappingList" class="mapping-list"></div>
+            </section>
+
+            <section id="runtimeView" class="view">
+              <div id="runtimeList" class="runtime-list"></div>
+            </section>
+
+            <footer class="result-actions">
+              <button id="newRunBtn" class="primary-button" type="button">＋ New analysis</button>
+              <button id="downloadBtn" class="secondary-button" type="button" disabled>⤓ Download Result JSON</button>
+            </footer>
           </div>
-          <div id="mappingList" class="mapping-list"></div>
-        </section>
-
-        <section id="runtimeView" class="view">
-          <div id="runtimeList" class="runtime-list"></div>
-        </section>
+        </div>
       </section>
     </main>
 

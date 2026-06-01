@@ -8,6 +8,8 @@ const POLL_FAST_WINDOW_MS = 60000;
 const FETCH_TIMEOUT_MS = 30000;
 const MAX_TRANSIENT_FETCH_RETRIES = 5;
 
+const PIPELINE_STEPS = ["Profile", "Extract", "Ground", "Verify"];
+
 const savedSettings = loadSavedSettings();
 
 const state = {
@@ -22,6 +24,7 @@ const state = {
   flaggedOnly: false,
   busy: false,
   forceLanding: false,
+  lastStageIndex: -1,
   polling: false,
   pollStartedAt: null,
   transientFetchFailures: 0,
@@ -33,12 +36,14 @@ const elements = {
   brandHome: document.querySelector("#brandHome"),
   newRunBtn: document.querySelector("#newRunBtn"),
   suggestions: [...document.querySelectorAll(".suggestion")],
-  procTitle: document.querySelector("#procTitle"),
+  threadFile: document.querySelector("#threadFile"),
+  threadFileMeta: document.querySelector("#threadFileMeta"),
+  threadRepo: document.querySelector("#threadRepo"),
+  procSteps: [...document.querySelectorAll("#procSteps li")],
   procStatus: document.querySelector("#procStatus"),
   procScore: document.querySelector("#procScore"),
   procExtracted: document.querySelector("#procExtracted"),
   procFlagged: document.querySelector("#procFlagged"),
-  procActivity: document.querySelector("#procActivity"),
   procBackBtn: document.querySelector("#procBackBtn"),
   runForm: document.querySelector("#runForm"),
   pdfInput: document.querySelector("#pdfInput"),
@@ -54,7 +59,6 @@ const elements = {
   downloadBtn: document.querySelector("#downloadBtn"),
   jobState: document.querySelector("#jobState"),
   jobMeta: document.querySelector("#jobMeta"),
-  scoreBar: document.querySelector("#scoreBar"),
   statusList: document.querySelector("#statusList"),
   paperTitle: document.querySelector("#paperTitle"),
   scoreMetric: document.querySelector("#scoreMetric"),
@@ -112,6 +116,20 @@ function wireEvents() {
     goToLanding();
   });
 
+  elements.mappingList?.addEventListener("click", (event) => {
+    const button = event.target.closest(".code-copy");
+    if (!button) return;
+    const code = button.closest(".code-card")?.querySelector(".code-body code");
+    const text = code?.dataset.raw ?? code?.textContent ?? "";
+    navigator.clipboard?.writeText(text).then(
+      () => {
+        button.textContent = "Copied";
+        window.setTimeout(() => (button.textContent = "Copy"), 1400);
+      },
+      () => {},
+    );
+  });
+
   elements.suggestions.forEach((button) => {
     button.addEventListener("click", () => {
       const repo = button.dataset.repo || "";
@@ -141,6 +159,7 @@ function wireEvents() {
     tab.addEventListener("click", () => {
       state.activeTab = tab.dataset.tab;
       renderTabs();
+      if (state.activeTab === "grounding") enhanceCodeBlocks();
     });
   });
 }
@@ -286,6 +305,7 @@ async function runPipeline() {
   state.result = null;
   state.job = null;
   state.forceLanding = false;
+  state.lastStageIndex = -1;
   state.polling = true;
   state.pollStartedAt = Date.now();
   state.transientFetchFailures = 0;
@@ -360,10 +380,10 @@ async function pollUntilDone(jobId) {
 
     state.job = job;
     saveJobSnapshot(job);
+    logStageTransition();
     render();
 
     if (job.status === "done") {
-      addStatus("Pipeline finished. Fetching full result", "done");
       await fetchFullResult(jobId);
       state.polling = false;
       return;
@@ -373,8 +393,18 @@ async function pollUntilDone(jobId) {
       throw new Error(`Backend pipeline failed: ${job.error || "Pipeline job failed."}`);
     }
 
-    addStatus(statusLine(job), "pending");
     await delay(pollDelayMs());
+  }
+}
+
+// Only record a log line when the inferred pipeline step actually advances,
+// instead of repeating "Pipeline processing" on every poll.
+function logStageTransition() {
+  const index = currentStageIndex();
+  if (index === state.lastStageIndex) return;
+  state.lastStageIndex = index;
+  if (index < PIPELINE_STEPS.length) {
+    addStatus(`${PIPELINE_STEPS[index]} stage running`, "pending");
   }
 }
 
@@ -384,6 +414,20 @@ async function fetchFullResult(jobId) {
   if (!response.ok) {
     throw new Error(errorMessage(result, `Result fetch failed with HTTP ${response.status}`));
   }
+
+  // Mark every step complete and let the live counters tick up to their final
+  // values before the result view slides in, so it never snaps from 0.
+  state.job = {
+    ...(state.job || {}),
+    status: "done",
+    total_extracted: countExtracted(result),
+    flagged_count: Array.isArray(result.flagged_ids) ? result.flagged_ids.length : 0,
+    overall_grounding_score: result.overall_grounding_score,
+  };
+  addStatus("Pipeline finished", "done");
+  render();
+  await delay(900);
+
   state.result = result;
   saveJobSnapshot({ ...result, status: "done" });
   state.activeTab = "overview";
@@ -479,7 +523,7 @@ function renderStage() {
   if (state.forceLanding) {
     stage = "landing";
   } else if (state.result) {
-    stage = "workbench";
+    stage = "result";
   } else if (state.busy || state.job) {
     stage = "processing";
   } else {
@@ -488,36 +532,100 @@ function renderStage() {
   document.body.dataset.stage = stage;
 }
 
+// The polling payload has no explicit stage field, so infer the current
+// step from the status string and from which result fields are populated.
+function currentStageIndex() {
+  const job = state.job;
+  if (state.result || job?.status === "done") return PIPELINE_STEPS.length;
+  if (!job) return 0;
+
+  const s = String(job.status || "").toLowerCase();
+  if (/verif/.test(s)) return 3;
+  if (/ground|map|match/.test(s)) return 2;
+  if (/extract/.test(s)) return 1;
+  if (/profil|plan/.test(s)) return 0;
+
+  if (job.overall_grounding_score != null) return 3;
+  if (job.total_extracted) return 2;
+  if (job.plan_summary || job.profile_summary) return 1;
+  return 0;
+}
+
+function renderThreadRequest() {
+  const file = state.result?.filename || state.job?.filename || state.file?.name;
+  if (elements.threadFile) elements.threadFile.textContent = file || "paper.pdf";
+  if (elements.threadFileMeta) {
+    elements.threadFileMeta.textContent = state.file
+      ? `${formatBytes(state.file.size)} · PDF`
+      : "PDF";
+  }
+  const repo = state.result?.github_url || state.job?.github_url || state.repoUrl;
+  if (elements.threadRepo) {
+    elements.threadRepo.textContent = repo ? repo.replace(/^https?:\/\//, "") : "repository";
+    elements.threadRepo.href = repo || "#";
+  }
+}
+
 function renderProcessing() {
   const job = state.job;
-  const name = job?.filename || state.file?.name;
-  if (elements.procTitle) {
-    elements.procTitle.textContent = name ? `Grounding ${name}` : "Grounding your paper…";
-  }
-
+  const stageIndex = currentStageIndex();
   const isError = job?.status === "error";
+
+  elements.procSteps.forEach((li, index) => {
+    const done = index < stageIndex;
+    const active = index === stageIndex && !isError;
+    const failed = isError && index === Math.min(stageIndex, PIPELINE_STEPS.length - 1);
+    li.classList.toggle("is-done", done);
+    li.classList.toggle("is-active", active);
+    li.classList.toggle("is-failed", failed);
+  });
+
   if (elements.procStatus) {
-    elements.procStatus.textContent = isError
+    const label = isError
       ? job.error || "Pipeline failed."
-      : job
-        ? statusLine(job)
-        : "Starting pipeline…";
+      : stageIndex >= PIPELINE_STEPS.length
+        ? "Finalizing evidence…"
+        : `${PIPELINE_STEPS[stageIndex]} in progress…`;
+    elements.procStatus.textContent = label;
     elements.procStatus.classList.toggle("is-error", Boolean(isError));
   }
 
   const score = scoreFromState();
-  if (elements.procScore) elements.procScore.textContent = score == null ? "—" : `${Math.round(score * 100)}%`;
-  if (elements.procExtracted) {
-    elements.procExtracted.textContent = String(job?.total_extracted ?? countExtracted(state.result) ?? 0);
-  }
-  if (elements.procFlagged) elements.procFlagged.textContent = String(job?.flagged_count ?? 0);
+  animateCount(elements.procScore, score == null ? null : Math.round(score * 100), "%");
+  animateCount(elements.procExtracted, job?.total_extracted ?? countExtracted(state.result) ?? 0);
+  animateCount(elements.procFlagged, job?.flagged_count ?? 0);
+}
 
-  if (elements.procActivity) elements.procActivity.innerHTML = elements.statusList.innerHTML;
+// Tween a number element toward `target` so live metrics rise instead of snapping.
+function animateCount(el, target, suffix = "") {
+  if (!el) return;
+  if (target == null) {
+    el.textContent = "—";
+    el.dataset.value = "";
+    return;
+  }
+  const from = Number(el.dataset.value || 0);
+  if (from === target) {
+    el.textContent = `${target}${suffix}`;
+    return;
+  }
+  el.dataset.value = String(target);
+  const start = performance.now();
+  const duration = 600;
+  const step = (now) => {
+    const t = Math.min(1, (now - start) / duration);
+    const eased = 1 - Math.pow(1 - t, 3);
+    const value = Math.round(from + (target - from) * eased);
+    el.textContent = `${value}${suffix}`;
+    if (t < 1 && el.dataset.value === String(target)) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
 }
 
 function render() {
   renderStage();
   renderStatus();
+  renderThreadRequest();
   renderProcessing();
   renderJob();
   renderHeader();
@@ -537,19 +645,14 @@ function renderJob() {
   elements.jobState.className = `job-state is-${status}`;
 
   if (!job) {
-    elements.jobMeta.textContent = "Start a run to see the job id and current status.";
+    elements.jobMeta.textContent = "";
   } else {
     const parts = [
-      job.job_id ? `job_id: ${job.job_id}` : "",
-      job.filename ? `file: ${job.filename}` : "",
-      job.github_url ? `repo: ${job.github_url}` : "",
+      job.job_id ? `job ${job.job_id}` : "",
       job.error ? `error: ${job.error}` : "",
     ].filter(Boolean);
     elements.jobMeta.textContent = parts.join(" · ");
   }
-
-  const score = scoreFromState();
-  elements.scoreBar.style.width = score == null ? "0%" : `${Math.round(score * 100)}%`;
 }
 
 function renderHeader() {
@@ -647,12 +750,21 @@ function renderExtractions() {
     : `<div class="empty-note">No items in this extraction group.</div>`;
 }
 
+const STATUS_RANK = { verified: 0, weak: 1, no_match: 2, unknown: 3, hallucinated: 4 };
+
+function statusRank(status) {
+  return STATUS_RANK[String(status || "unknown").toLowerCase()] ?? 3;
+}
+
 function renderMappings() {
   const mappings = Array.isArray(state.result?.mappings) ? state.result.mappings : [];
   const flagged = new Set(state.result?.flagged_ids || []);
   const visible = state.flaggedOnly
     ? mappings.filter((mapping) => flagged.has(mapping.component_id) || mapping.verification_status !== "verified")
-    : mappings;
+    : mappings.slice();
+
+  // Surface trustworthy evidence first; push hallucinated/no-match to the bottom.
+  visible.sort((a, b) => statusRank(a.verification_status) - statusRank(b.verification_status));
 
   elements.mappingSummary.textContent = `${mappings.length} mappings · ${flagged.size} flagged`;
 
@@ -662,6 +774,7 @@ function renderMappings() {
   }
 
   elements.mappingList.innerHTML = visible.map((mapping) => renderMappingCard(mapping)).join("");
+  if (state.activeTab === "grounding") enhanceCodeBlocks();
 }
 
 function renderRuntime() {
@@ -782,22 +895,169 @@ function renderMappingCard(mapping) {
 function renderMatch(match) {
   const githubUrl = state.result?.github_url || state.job?.github_url || state.repoUrl;
   const link = buildGithubLineUrl(githubUrl, match.file, match.line_start, match.line_end);
+  const file = match.file || "unknown file";
+  const fileName = String(file).split("/").pop();
+  const lineLabel =
+    match.line_start != null ? `L${match.line_start}${match.line_end ? `–${match.line_end}` : ""}` : "";
+  const snippet = match.matched_code_snippet || "";
+
   return `
-    <div class="match-item">
-      <div class="match-title">
-        <a href="${escapeAttribute(link)}" target="_blank" rel="noreferrer">
-          ${escapeHtml(match.file || "unknown file")}#L${escapeHtml(match.line_start)}-L${escapeHtml(match.line_end)}
-        </a>
-        <span>${escapeHtml(formatPercent(match.confidence))}</span>
+    <figure class="code-card"
+      data-file="${escapeAttribute(file)}"
+      data-start="${escapeAttribute(match.line_start ?? "")}"
+      data-end="${escapeAttribute(match.line_end ?? "")}"
+      data-repo="${escapeAttribute(githubUrl || "")}"
+      data-snippet="${escapeAttribute(snippet)}">
+      <figcaption class="code-card-head">
+        <span class="code-dot" aria-hidden="true"></span>
+        <span class="code-file" title="${escapeAttribute(file)}">${escapeHtml(fileName)}</span>
+        ${lineLabel ? `<span class="code-lines">${escapeHtml(lineLabel)}</span>` : ""}
+        <span class="code-conf">${escapeHtml(formatPercent(match.confidence))}</span>
+        <span class="code-spacer"></span>
+        <button class="code-copy" type="button" title="Copy snippet">Copy</button>
+        <a class="code-gh" href="${escapeAttribute(link)}" target="_blank" rel="noreferrer">GitHub ↗</a>
+      </figcaption>
+      ${match.semantic_link ? `<div class="code-semantic">${escapeHtml(match.semantic_link)}</div>` : ""}
+      <div class="code-scroll" data-state="loading">
+        <pre class="code-gutter" aria-hidden="true"></pre>
+        <pre class="code-body"><code>${escapeHtml(snippet) || "// loading code from GitHub…"}</code></pre>
       </div>
-      <div class="mapping-meta">${escapeHtml(match.semantic_link || "")}</div>
-      ${
-        match.matched_code_snippet
-          ? `<pre class="code-block">${escapeHtml(match.matched_code_snippet)}</pre>`
-          : ""
-      }
-    </div>
+    </figure>
   `;
+}
+
+const fileCache = new Map();
+const branchCache = new Map();
+
+function parseRepo(repoUrl) {
+  const match = String(repoUrl || "").match(/github\.com[/:]([^/]+)\/([^/]+?)(?:\.git)?\/?$/);
+  return match ? { owner: match[1], repo: match[2] } : null;
+}
+
+async function resolveBranch(owner, repo) {
+  const key = `${owner}/${repo}`;
+  if (branchCache.has(key)) return branchCache.get(key);
+  let branch = "main";
+  try {
+    const response = await fetch(`https://api.github.com/repos/${owner}/${repo}`);
+    if (response.ok) branch = (await response.json()).default_branch || "main";
+  } catch {
+    // Fall back to common branch names below.
+  }
+  branchCache.set(key, branch);
+  return branch;
+}
+
+async function fetchRepoFile(owner, repo, path) {
+  const key = `${owner}/${repo}/${path}`;
+  if (fileCache.has(key)) return fileCache.get(key);
+
+  const branch = await resolveBranch(owner, repo);
+  const candidates = [...new Set([branch, "main", "master"])];
+  let text = null;
+  for (const ref of candidates) {
+    try {
+      const response = await fetch(
+        `https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${path}`,
+      );
+      if (response.ok) {
+        text = await response.text();
+        break;
+      }
+    } catch {
+      // Try the next candidate ref.
+    }
+  }
+  fileCache.set(key, text);
+  return text;
+}
+
+function detectLanguage(file) {
+  const ext = String(file).split(".").pop().toLowerCase();
+  const map = {
+    py: "python",
+    js: "javascript",
+    mjs: "javascript",
+    ts: "typescript",
+    tsx: "typescript",
+    jsx: "javascript",
+    java: "java",
+    cc: "cpp",
+    cpp: "cpp",
+    cxx: "cpp",
+    h: "cpp",
+    hpp: "cpp",
+    c: "c",
+    go: "go",
+    rs: "rust",
+    rb: "ruby",
+    sh: "bash",
+    bash: "bash",
+    yaml: "yaml",
+    yml: "yaml",
+    json: "json",
+    md: "markdown",
+    lua: "lua",
+    scala: "scala",
+    swift: "swift",
+    kt: "kotlin",
+  };
+  return map[ext] || null;
+}
+
+function paintCode(card, codeText, startLine) {
+  const scroll = card.querySelector(".code-scroll");
+  const codeEl = card.querySelector(".code-body code");
+  const gutter = card.querySelector(".code-gutter");
+  if (!scroll || !codeEl) return;
+
+  const lines = codeText.replace(/\n$/, "").split("\n");
+  const base = Number(startLine) || 1;
+  gutter.textContent = lines.map((_, i) => base + i).join("\n");
+
+  const lang = detectLanguage(card.dataset.file);
+  if (window.hljs) {
+    try {
+      const html =
+        lang && window.hljs.getLanguage(lang)
+          ? window.hljs.highlight(codeText, { language: lang }).value
+          : window.hljs.highlightAuto(codeText).value;
+      codeEl.innerHTML = html;
+    } catch {
+      codeEl.textContent = codeText;
+    }
+  } else {
+    codeEl.textContent = codeText;
+  }
+  codeEl.dataset.raw = codeText;
+  scroll.dataset.state = "ready";
+}
+
+async function enhanceCard(card) {
+  if (card.dataset.enhanced) return;
+  card.dataset.enhanced = "1";
+
+  const snippet = card.dataset.snippet || "";
+  const start = Number(card.dataset.start);
+  const end = Number(card.dataset.end);
+  const repoInfo = parseRepo(card.dataset.repo);
+
+  // Default to the snippet the pipeline returned; upgrade to the real file when possible.
+  if (snippet) paintCode(card, snippet, start || 1);
+
+  if (!repoInfo || !card.dataset.file || !Number.isFinite(start)) return;
+
+  const text = await fetchRepoFile(repoInfo.owner, repoInfo.repo, card.dataset.file);
+  if (!text) return;
+  const all = text.split("\n");
+  const from = Math.max(1, start);
+  const to = Number.isFinite(end) && end >= from ? end : from;
+  const slice = all.slice(from - 1, to).join("\n");
+  if (slice.trim()) paintCode(card, slice, from);
+}
+
+function enhanceCodeBlocks() {
+  document.querySelectorAll(".code-card:not([data-enhanced])").forEach((card) => enhanceCard(card));
 }
 
 function renderRuntimeItem(entry) {
