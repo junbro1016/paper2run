@@ -107,6 +107,47 @@
       </div>
     </section>
 
+    <!-- ============ PROCESSING ============ -->
+    <section class="processing" aria-label="Pipeline running" aria-live="polite">
+      <span class="hero-badge proc-badge"><i class="proc-spin" aria-hidden="true"></i> Analyzing</span>
+      <h1 class="hero-title" id="procTitle">Grounding your paper…</h1>
+      <p class="hero-sub" id="procSub">
+        Profiling, extracting, and mapping every claim to code. This runs
+        asynchronously — you can keep watching right here.
+      </p>
+
+      <div class="proc-panel">
+        <div class="proc-stages" aria-hidden="true">
+          <span class="proc-stage" style="--i: 0">Profile</span>
+          <span class="proc-stage" style="--i: 1">Extract</span>
+          <span class="proc-stage" style="--i: 2">Ground</span>
+          <span class="proc-stage" style="--i: 3">Verify</span>
+        </div>
+
+        <div class="proc-stats">
+          <div><span id="procExtracted">0</span><small>Extracted</small></div>
+          <div><span id="procFlagged">0</span><small>Flagged</small></div>
+          <div><span id="procScore">—</span><small>Grounding</small></div>
+        </div>
+
+        <div class="proc-progress">
+          <div class="proc-progress-head">
+            <span id="procStatus">Starting pipeline…</span>
+          </div>
+          <div class="progress-track is-running">
+            <div id="procBar" class="progress-fill"></div>
+          </div>
+        </div>
+
+        <ol id="procActivity" class="status-list proc-activity"></ol>
+
+        <div class="proc-actions">
+          <button id="procBackBtn" class="ghost-button" type="button">← Back to start</button>
+          <small>Your job keeps running even if you leave.</small>
+        </div>
+      </div>
+    </section>
+
     <!-- ============ WORKBENCH ============ -->
     <main class="app-shell">
       <section class="run-panel" aria-label="Run status">

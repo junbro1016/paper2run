@@ -243,12 +243,44 @@ a {
 }
 
 /* ============ STAGE TOGGLE ============ */
-body[data-stage="landing"] .app-shell {
+.processing {
   display: none;
 }
 
-body[data-stage="workbench"] .landing {
+body[data-stage="landing"] .app-shell,
+body[data-stage="landing"] .processing {
   display: none;
+}
+
+body[data-stage="processing"] .landing,
+body[data-stage="processing"] .app-shell {
+  display: none;
+}
+
+body[data-stage="processing"] .processing {
+  display: flex;
+}
+
+body[data-stage="workbench"] .landing,
+body[data-stage="workbench"] .processing {
+  display: none;
+}
+
+body[data-stage="landing"] .landing,
+body[data-stage="processing"] .processing,
+body[data-stage="workbench"] .app-shell {
+  animation: stage-in 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes stage-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* ============ LANDING ============ */
@@ -550,6 +582,156 @@ body[data-stage="workbench"] .landing {
   color: var(--ink);
   background: var(--accent-soft);
   transform: translateY(-1px);
+}
+
+/* ============ PROCESSING ============ */
+.processing {
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  width: min(720px, calc(100% - 40px));
+  margin: 0 auto;
+  padding: clamp(48px, 10vh, 110px) 0 80px;
+  text-align: center;
+}
+
+.proc-badge .proc-spin {
+  width: 13px;
+  height: 13px;
+  border-radius: 999px;
+  border: 2px solid rgba(52, 230, 168, 0.3);
+  border-top-color: var(--accent);
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.proc-panel {
+  width: 100%;
+  margin-top: 6px;
+  display: grid;
+  gap: 18px;
+  padding: 22px;
+  border: 1px solid var(--glass-line-strong);
+  border-radius: 22px;
+  background: rgba(14, 21, 28, 0.66);
+  backdrop-filter: blur(28px);
+  box-shadow: var(--shadow-md), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  text-align: left;
+}
+
+.proc-stages {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.proc-stage {
+  position: relative;
+  overflow: hidden;
+  padding: 11px 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.proc-stage::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(52, 230, 168, 0.22), transparent);
+  transform: translateX(-100%);
+  animation: stage-sweep 2.4s ease-in-out infinite;
+  animation-delay: calc(var(--i) * 0.3s);
+}
+
+@keyframes stage-sweep {
+  0% { transform: translateX(-100%); }
+  55%, 100% { transform: translateX(100%); }
+}
+
+.proc-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.proc-stats div {
+  display: grid;
+  gap: 4px;
+  padding: 14px 16px;
+  border-left: 1px solid var(--line);
+}
+
+.proc-stats div:first-child {
+  border-left: 0;
+}
+
+.proc-stats span {
+  font-family: var(--mono);
+  font-size: 22px;
+  font-weight: 900;
+  color: var(--accent);
+}
+
+.proc-stats small {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.proc-progress {
+  display: grid;
+  gap: 8px;
+}
+
+.proc-progress-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.proc-progress-head .is-error {
+  color: var(--red);
+}
+
+.progress-track.is-running {
+  position: relative;
+}
+
+.progress-track.is-running .progress-fill {
+  width: 38%;
+  animation: indeterminate 1.6s ease-in-out infinite;
+}
+
+@keyframes indeterminate {
+  0% { transform: translateX(-110%); }
+  100% { transform: translateX(360%); }
+}
+
+.proc-activity {
+  max-height: 168px;
+}
+
+.proc-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.proc-actions small {
+  color: var(--faint);
 }
 
 /* ============ WORKBENCH SHELL ============ */

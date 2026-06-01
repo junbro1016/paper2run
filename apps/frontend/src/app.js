@@ -21,6 +21,7 @@ const state = {
   activeExtractionGroup: "equations",
   flaggedOnly: false,
   busy: false,
+  forceLanding: false,
   polling: false,
   pollStartedAt: null,
   transientFetchFailures: 0,
@@ -32,6 +33,13 @@ const elements = {
   brandHome: document.querySelector("#brandHome"),
   newRunBtn: document.querySelector("#newRunBtn"),
   suggestions: [...document.querySelectorAll(".suggestion")],
+  procTitle: document.querySelector("#procTitle"),
+  procStatus: document.querySelector("#procStatus"),
+  procScore: document.querySelector("#procScore"),
+  procExtracted: document.querySelector("#procExtracted"),
+  procFlagged: document.querySelector("#procFlagged"),
+  procActivity: document.querySelector("#procActivity"),
+  procBackBtn: document.querySelector("#procBackBtn"),
   runForm: document.querySelector("#runForm"),
   pdfInput: document.querySelector("#pdfInput"),
   fileName: document.querySelector("#fileName"),
@@ -98,8 +106,10 @@ function wireEvents() {
   elements.downloadBtn.addEventListener("click", downloadResult);
 
   elements.newRunBtn?.addEventListener("click", () => goToLanding());
-  elements.brandHome?.addEventListener("click", () => {
-    if (!state.busy) goToLanding();
+  elements.brandHome?.addEventListener("click", () => goToLanding());
+  elements.procBackBtn?.addEventListener("click", () => {
+    state.polling = false;
+    goToLanding();
   });
 
   elements.suggestions.forEach((button) => {
@@ -275,6 +285,7 @@ async function runPipeline() {
 
   state.result = null;
   state.job = null;
+  state.forceLanding = false;
   state.polling = true;
   state.pollStartedAt = Date.now();
   state.transientFetchFailures = 0;
@@ -402,6 +413,7 @@ async function loadResultJson(file) {
   try {
     const text = await file.text();
     const result = JSON.parse(text);
+    state.forceLanding = false;
     state.result = normalizeLoadedResult(result);
     state.job = {
       job_id: state.result.job_id || "loaded-json",
@@ -457,18 +469,56 @@ function downloadResult() {
 }
 
 function goToLanding() {
-  document.body.dataset.stage = "landing";
+  state.forceLanding = true;
+  renderStage();
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
 function renderStage() {
-  const inWorkbench = Boolean(state.busy || state.job || state.result);
-  document.body.dataset.stage = inWorkbench ? "workbench" : "landing";
+  let stage;
+  if (state.forceLanding) {
+    stage = "landing";
+  } else if (state.result) {
+    stage = "workbench";
+  } else if (state.busy || state.job) {
+    stage = "processing";
+  } else {
+    stage = "landing";
+  }
+  document.body.dataset.stage = stage;
+}
+
+function renderProcessing() {
+  const job = state.job;
+  const name = job?.filename || state.file?.name;
+  if (elements.procTitle) {
+    elements.procTitle.textContent = name ? `Grounding ${name}` : "Grounding your paper…";
+  }
+
+  const isError = job?.status === "error";
+  if (elements.procStatus) {
+    elements.procStatus.textContent = isError
+      ? job.error || "Pipeline failed."
+      : job
+        ? statusLine(job)
+        : "Starting pipeline…";
+    elements.procStatus.classList.toggle("is-error", Boolean(isError));
+  }
+
+  const score = scoreFromState();
+  if (elements.procScore) elements.procScore.textContent = score == null ? "—" : `${Math.round(score * 100)}%`;
+  if (elements.procExtracted) {
+    elements.procExtracted.textContent = String(job?.total_extracted ?? countExtracted(state.result) ?? 0);
+  }
+  if (elements.procFlagged) elements.procFlagged.textContent = String(job?.flagged_count ?? 0);
+
+  if (elements.procActivity) elements.procActivity.innerHTML = elements.statusList.innerHTML;
 }
 
 function render() {
   renderStage();
   renderStatus();
+  renderProcessing();
   renderJob();
   renderHeader();
   renderTabs();
