@@ -39,11 +39,8 @@ const elements = {
   threadFile: document.querySelector("#threadFile"),
   threadFileMeta: document.querySelector("#threadFileMeta"),
   threadRepo: document.querySelector("#threadRepo"),
-  procSteps: [...document.querySelectorAll("#procSteps li")],
+  procHeading: document.querySelector("#procHeading"),
   procStatus: document.querySelector("#procStatus"),
-  procScore: document.querySelector("#procScore"),
-  procExtracted: document.querySelector("#procExtracted"),
-  procFlagged: document.querySelector("#procFlagged"),
   procBackBtn: document.querySelector("#procBackBtn"),
   runForm: document.querySelector("#runForm"),
   pdfInput: document.querySelector("#pdfInput"),
@@ -426,7 +423,7 @@ async function fetchFullResult(jobId) {
   };
   addStatus("Pipeline finished", "done");
   render();
-  await delay(900);
+  await delay(550);
 
   state.result = result;
   saveJobSnapshot({ ...result, status: "done" });
@@ -566,60 +563,33 @@ function renderThreadRequest() {
   }
 }
 
+// Calm, honest status copy keyed to the inferred step — no fake counters.
+const STEP_CAPTIONS = [
+  "Reading the paper's structure and sections.",
+  "Extracting equations, figures, and algorithms.",
+  "Mapping each claim to your repository code.",
+  "Scoring and verifying the evidence.",
+  "Finalizing the evidence report.",
+];
+
 function renderProcessing() {
   const job = state.job;
   const stageIndex = currentStageIndex();
   const isError = job?.status === "error";
 
-  elements.procSteps.forEach((li, index) => {
-    const done = index < stageIndex;
-    const active = index === stageIndex && !isError;
-    const failed = isError && index === Math.min(stageIndex, PIPELINE_STEPS.length - 1);
-    li.classList.toggle("is-done", done);
-    li.classList.toggle("is-active", active);
-    li.classList.toggle("is-failed", failed);
-  });
+  if (elements.procHeading) {
+    const name = job?.filename || state.file?.name;
+    elements.procHeading.textContent = isError
+      ? "Pipeline failed"
+      : `Grounding ${name || "your paper"}…`;
+  }
 
   if (elements.procStatus) {
-    const label = isError
-      ? job.error || "Pipeline failed."
-      : stageIndex >= PIPELINE_STEPS.length
-        ? "Finalizing evidence…"
-        : `${PIPELINE_STEPS[stageIndex]} in progress…`;
-    elements.procStatus.textContent = label;
+    elements.procStatus.textContent = isError
+      ? job.error || "The pipeline could not finish."
+      : STEP_CAPTIONS[Math.min(stageIndex, STEP_CAPTIONS.length - 1)];
     elements.procStatus.classList.toggle("is-error", Boolean(isError));
   }
-
-  const score = scoreFromState();
-  animateCount(elements.procScore, score == null ? null : Math.round(score * 100), "%");
-  animateCount(elements.procExtracted, job?.total_extracted ?? countExtracted(state.result) ?? 0);
-  animateCount(elements.procFlagged, job?.flagged_count ?? 0);
-}
-
-// Tween a number element toward `target` so live metrics rise instead of snapping.
-function animateCount(el, target, suffix = "") {
-  if (!el) return;
-  if (target == null) {
-    el.textContent = "—";
-    el.dataset.value = "";
-    return;
-  }
-  const from = Number(el.dataset.value || 0);
-  if (from === target) {
-    el.textContent = `${target}${suffix}`;
-    return;
-  }
-  el.dataset.value = String(target);
-  const start = performance.now();
-  const duration = 600;
-  const step = (now) => {
-    const t = Math.min(1, (now - start) / duration);
-    const eased = 1 - Math.pow(1 - t, 3);
-    const value = Math.round(from + (target - from) * eased);
-    el.textContent = `${value}${suffix}`;
-    if (t < 1 && el.dataset.value === String(target)) requestAnimationFrame(step);
-  };
-  requestAnimationFrame(step);
 }
 
 function render() {

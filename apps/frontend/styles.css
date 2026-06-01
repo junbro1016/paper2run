@@ -693,7 +693,7 @@ body[data-stage="result"] .response-result {
 
 /* ============ PROCESSING (in thread) ============ */
 .response-processing {
-  gap: 18px;
+  gap: 14px;
 }
 
 .response-head {
@@ -720,183 +720,59 @@ body[data-stage="result"] .response-result {
   to { transform: rotate(360deg); }
 }
 
-.proc-steps {
-  display: grid;
-  gap: 4px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.proc-steps li {
-  display: grid;
-  grid-template-columns: 26px minmax(0, 1fr);
-  gap: 12px;
-  align-items: center;
-  padding: 10px 12px;
-  border-radius: 12px;
-  border: 1px solid transparent;
-  transition: background 200ms ease, border-color 200ms ease;
-}
-
-.proc-steps li strong {
-  display: block;
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--muted);
-}
-
-.proc-steps li small {
-  color: var(--faint);
-  font-size: 12px;
-}
-
-.step-mark {
-  position: relative;
-  width: 22px;
-  height: 22px;
-  border-radius: 999px;
-  border: 2px solid var(--line-strong);
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.proc-steps li.is-active {
-  border-color: rgba(52, 230, 168, 0.32);
-  background: var(--accent-soft);
-}
-
-.proc-steps li.is-active strong {
-  color: var(--ink);
-}
-
-.proc-steps li.is-active .step-mark {
-  border-color: var(--accent);
-}
-
-.proc-steps li.is-active .step-mark::after {
-  content: "";
-  position: absolute;
-  inset: 3px;
-  border-radius: 999px;
-  background: var(--accent);
-  animation: pulse 1.4s ease-in-out infinite;
-}
-
-.proc-steps li.is-done strong {
-  color: var(--ink-soft);
-}
-
-.proc-steps li.is-done .step-mark {
-  border-color: var(--accent);
-  background: var(--accent);
-}
-
-.proc-steps li.is-done .step-mark::after {
-  content: "✓";
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  color: #04140d;
-  font-size: 12px;
-  font-weight: 900;
-}
-
-.proc-steps li.is-failed .step-mark {
-  border-color: var(--red);
-  background: rgba(255, 122, 107, 0.2);
-}
-
-.proc-stats {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-}
-
-.proc-stats div {
-  display: grid;
-  gap: 4px;
-  padding: 14px 16px;
-  border-left: 1px solid var(--line);
-}
-
-.proc-stats div:first-child {
-  border-left: 0;
-}
-
-.proc-stats span {
-  font-family: var(--mono);
-  font-size: 22px;
-  font-weight: 900;
-  color: var(--accent);
-}
-
-.proc-stats small {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.proc-progress {
-  display: grid;
-  gap: 8px;
-}
-
-.proc-progress-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  color: var(--ink-soft);
-  font-size: 13px;
+.proc-heading {
+  margin: 6px 0 0;
+  font-size: clamp(20px, 2.6vw, 26px);
   font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
 }
 
-.proc-progress-head .is-error {
+.proc-sub {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.55;
+  transition: opacity 240ms ease;
+}
+
+.proc-sub.is-error {
   color: var(--red);
 }
 
-.proc-log {
-  border-top: 1px solid var(--line);
-  padding-top: 12px;
+/* Calm shimmer skeleton — implies work without faking progress. */
+.proc-shimmer {
+  display: grid;
+  gap: 12px;
+  margin-top: 8px;
 }
 
-.proc-log summary {
-  cursor: pointer;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.proc-log[open] summary {
-  margin-bottom: 10px;
-}
-
-/* progress bar (shared) */
-.progress-track {
-  height: 9px;
-  overflow: hidden;
+.proc-shimmer span {
+  height: 12px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.04) 0%,
+    rgba(52, 230, 168, 0.18) 50%,
+    rgba(255, 255, 255, 0.04) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.8s ease-in-out infinite;
 }
 
-.progress-fill {
-  width: 0%;
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, var(--accent-strong), var(--accent));
-  transition: width 220ms ease;
+.proc-shimmer span:nth-child(2) {
+  width: 86%;
+  animation-delay: 0.2s;
 }
 
-.progress-track.is-running .progress-fill {
-  width: 38%;
-  animation: indeterminate 1.6s ease-in-out infinite;
+.proc-shimmer span:nth-child(3) {
+  width: 64%;
+  animation-delay: 0.4s;
 }
 
-@keyframes indeterminate {
-  0% { transform: translateX(-120%); }
-  100% { transform: translateX(360%); }
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 
 .status-list {
