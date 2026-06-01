@@ -1,4 +1,5 @@
-const DEFAULT_API_BASE_URL = "https://paper2run-production.up.railway.app";
+const DEFAULT_API_BASE_URL = "https://paper2run.onrender.com";
+const LEGACY_API_BASE_URLS = new Set(["https://paper2run-production.up.railway.app"]);
 const SETTINGS_STORAGE_KEY = "paper2run.pipeline.frontend.settings";
 const POLL_INTERVAL_MS = 3000;
 
@@ -7,7 +8,7 @@ const savedSettings = loadSavedSettings();
 const state = {
   file: null,
   repoUrl: savedSettings.repoUrl || "",
-  apiBaseUrl: savedSettings.apiBaseUrl || DEFAULT_API_BASE_URL,
+  apiBaseUrl: normalizeApiBaseUrl(savedSettings.apiBaseUrl),
   job: null,
   result: null,
   statuses: [],
@@ -110,6 +111,14 @@ function loadSavedSettings() {
   } catch {
     return {};
   }
+}
+
+function normalizeApiBaseUrl(value) {
+  const normalized = String(value || "").replace(/\/$/, "");
+  if (!normalized || LEGACY_API_BASE_URLS.has(normalized)) {
+    return DEFAULT_API_BASE_URL;
+  }
+  return normalized;
 }
 
 function saveSettings() {

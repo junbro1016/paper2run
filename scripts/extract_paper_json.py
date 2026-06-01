@@ -27,7 +27,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 
-DEFAULT_BASE_URL = "https://paper2run-production.up.railway.app"
+DEFAULT_BASE_URL = "https://paper2run.onrender.com"
 
 
 class ApiError(RuntimeError):

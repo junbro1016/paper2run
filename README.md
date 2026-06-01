@@ -43,8 +43,14 @@ The scripts and mapping API use Python standard library modules only.
 The frontend ships with these defaults:
 
 ```text
-Paper2Run API: https://paper2run-production.up.railway.app
+Paper2Run API: https://paper2run.onrender.com
 Mapping API:   https://paper2run-nevv.onrender.com/map
+```
+
+The Paper2Run API exposes the end-to-end pipeline documented at:
+
+```text
+https://paper2run.onrender.com/docs
 ```
 
 The Mapping API healthcheck is:
@@ -148,7 +154,7 @@ For another provider, use the default start command from `Procfile`, or set:
 python3 apps/mapping-api/server.py --host 0.0.0.0
 ```
 
-When the `Mapping API` field is set, the frontend sends:
+Direct Mapping API clients send:
 
 ```http
 POST <mapping-api-url>
@@ -161,7 +167,7 @@ Request body:
 {
   "filename": "paper.pdf",
   "paper_id": "uuid",
-  "base_url": "https://paper2run-production.up.railway.app",
+  "base_url": "https://paper2run.onrender.com",
   "github_repository": {
     "url": "https://github.com/owner/repo"
   },
