@@ -776,13 +776,18 @@ function renderSkillRadar(skills) {
       return `<line x1="${center}" y1="${center}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" class="radar-spoke"></line>`;
     })
     .join("");
+  // The SVG sits centered horizontally and 48px from the top of .radar-wrap
+  // (inset: 48px 50%; translateX(-50%)). Map each label from SVG space into
+  // that same frame so the chips line up with their vertices.
+  const labelRadius = maxRadius + 34;
   const labels = skills
     .map(([label, value], index) => {
       const angle = -Math.PI / 2 + (Math.PI * 2 * index) / skills.length;
-      const x = center + Math.cos(angle) * (maxRadius + 30);
-      const y = center + Math.sin(angle) * (maxRadius + 30);
+      const dx = Math.cos(angle) * labelRadius;
+      const y = center + Math.sin(angle) * labelRadius;
+      const sign = dx < 0 ? "-" : "+";
       return `
-        <div class="skill-chip" style="--x:${x.toFixed(1)}px; --y:${y.toFixed(1)}px">
+        <div class="skill-chip" style="--x:calc(50% ${sign} ${Math.abs(dx).toFixed(1)}px); --y:${(y + 48).toFixed(1)}px">
           <span>${escapeHtml(label)}</span>
           <strong>${Math.round(value * 100)}</strong>
         </div>
