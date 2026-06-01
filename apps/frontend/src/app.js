@@ -241,11 +241,10 @@ function restoreSavedJob() {
       state.busy = true;
       fetchFullResult(saved.job_id).finally(() => setBusy(false));
     } else {
-      addStatus(`Restored job: ${saved.job_id}`, "pending");
-      state.polling = true;
-      state.busy = true;
-      state.pollStartedAt = saved.savedAt || Date.now();
-      pollUntilDone(saved.job_id).finally(() => setBusy(false));
+      clearSavedJobSnapshot();
+      state.job = null;
+      state.polling = false;
+      state.busy = false;
     }
   } catch {
     // Ignore corrupt saved job metadata.
@@ -466,17 +465,19 @@ async function checkHealth({ silent = false } = {}) {
 
 async function loadResultJson(file) {
   try {
+    clearSavedJobSnapshot();
     const text = await file.text();
     const result = JSON.parse(text);
     const normalized = normalizeLoadedResult(result);
     state.forceLanding = false;
     state.polling = false;
     state.busy = false;
+    state.file = file;
     state.result = normalized;
     state.job = {
       job_id: state.result.job_id || "loaded-json",
       status: state.result.status || "done",
-      filename: state.result.filename,
+      filename: state.result.filename || file.name,
       github_url: state.result.github_url,
       overall_grounding_score: state.result.overall_grounding_score,
       flagged_count: Array.isArray(state.result.flagged_ids) ? state.result.flagged_ids.length : null,
@@ -486,11 +487,19 @@ async function loadResultJson(file) {
     state.activeExtractionGroup = firstExtractionGroup(state.result) || "equations";
     state.repoUrl = state.result.github_url || state.repoUrl;
     elements.repoUrl.value = state.repoUrl;
-    clearSavedJobSnapshot();
+    renderFileMeta();
     addStatus(`Loaded result JSON: ${file.name}`, "done");
     render();
   } catch (error) {
+    state.polling = false;
+    state.busy = false;
+    state.job = {
+      status: "error",
+      filename: file.name,
+      error: `Could not load JSON: ${error.message}`,
+    };
     addStatus(`Could not load JSON: ${error.message}`, "error");
+    render();
   }
 }
 
