@@ -58,7 +58,6 @@ const elements = {
   paperTitle: document.querySelector("#paperTitle"),
   scoreMetric: document.querySelector("#scoreMetric"),
   extractedMetric: document.querySelector("#extractedMetric"),
-  flaggedMetric: document.querySelector("#flaggedMetric"),
   tabs: [...document.querySelectorAll(".tab")],
   emptyState: document.querySelector("#emptyState"),
   overviewGrid: document.querySelector("#overviewGrid"),
@@ -214,7 +213,6 @@ function saveJobSnapshot(job = state.job) {
         github_url: job.github_url || state.repoUrl,
         apiBaseUrl: state.apiBaseUrl,
         overall_grounding_score: job.overall_grounding_score,
-        flagged_count: job.flagged_count,
         total_extracted: job.total_extracted,
         savedAt: Date.now(),
       }),
@@ -234,7 +232,6 @@ function restoreSavedJob() {
       filename: saved.filename,
       github_url: saved.github_url,
       overall_grounding_score: saved.overall_grounding_score,
-      flagged_count: saved.flagged_count,
       total_extracted: saved.total_extracted,
     };
     state.repoUrl = saved.github_url || state.repoUrl;
@@ -429,7 +426,6 @@ async function fetchFullResult(jobId) {
     ...(state.job || {}),
     status: "done",
     total_extracted: countExtracted(result),
-    flagged_count: Array.isArray(result.flagged_ids) ? result.flagged_ids.length : 0,
     overall_grounding_score: result.overall_grounding_score,
   };
   addStatus("Pipeline finished", "done");
@@ -472,7 +468,6 @@ async function loadResultJson(file) {
       filename: state.result.filename,
       github_url: state.result.github_url,
       overall_grounding_score: state.result.overall_grounding_score,
-      flagged_count: Array.isArray(state.result.flagged_ids) ? state.result.flagged_ids.length : null,
       total_extracted: countExtracted(state.result),
     };
     state.activeTab = "overview";
@@ -635,9 +630,6 @@ function renderHeader() {
   const score = scoreFromState();
   elements.scoreMetric.textContent = score == null ? "-" : `${Math.round(score * 100)}%`;
   elements.extractedMetric.textContent = String(state.job?.total_extracted ?? countExtracted(state.result));
-  elements.flaggedMetric.textContent = String(
-    state.job?.flagged_count ?? (Array.isArray(state.result?.flagged_ids) ? state.result.flagged_ids.length : 0),
-  );
 }
 
 function renderTabs() {
@@ -657,37 +649,158 @@ function renderOverview() {
 
   elements.emptyState.style.display = "none";
   const profile = state.result.profile || state.job?.profile_summary || {};
-  const representativeFigure = getExtractionItems(state.result, "figure")[0];
-  const overviewStats = [
-    ["Paper Type", profile.paper_type],
-    ["Trajectory", profile.trajectory],
-    ["Layout", profile.layout],
-    ["Pages", profile.page_count],
-    ["Difficulty", profile.difficulty_score],
-    ["Formalism", profile.formalism_role],
-  ].filter(([, value]) => value != null && value !== "");
-
-  elements.overviewGrid.innerHTML = [
-    infoCard(
-      "Paper Overview",
-      `
-        <div class="profile-hero">
-          <p>${escapeHtml(profile.reasoning || "No profile reasoning reported yet.")}</p>
-          <div class="pill-row">${overviewStats.map(([key, value]) => metricPill(key, value)).join("")}</div>
-        </div>
-        ${renderKeyValues({ sections_present: profile.sections_present })}
-      `,
-      "is-profile",
-    ),
-    infoCard("Representative Figure", renderRepresentativeFigure(representativeFigure), "is-figure"),
-    infoCard("Run Summary", renderKeyValues(summaryObject()), "is-summary"),
-  ].join("");
+  elements.overviewGrid.innerHTML = infoCard(
+    "Paper Understanding Brief",
+    `
+      <div class="overview-brief">
+        <section class="overview-summary">
+          <div class="difficulty-band">
+            <div>
+              <span class="section-label">Overall difficulty</span>
+              <strong>${escapeHtml(formatDifficulty(profile.difficulty_score))}</strong>
+            </div>
+            <div class="difficulty-meter" style="--difficulty: ${escapeAttribute(difficultyPercent(profile.difficulty_score))}%">
+              <span></span>
+            </div>
+          </div>
+          ${renderPaperSummary(profile)}
+          <div class="pill-row">${overviewPills(profile).map(([key, value]) => metricPill(key, value)).join("")}</div>
+        </section>
+        <section class="skills-panel">
+          <span class="section-label">Core competencies</span>
+          ${renderSkillRadar(coreCompetencies(profile))}
+        </section>
+      </div>
+    `,
+    "is-wide is-brief",
+  );
 }
 
 const STATUS_RANK = { verified: 0, weak: 1, no_match: 2, unknown: 3, hallucinated: 4 };
 
 function statusRank(status) {
   return STATUS_RANK[String(status || "unknown").toLowerCase()] ?? 3;
+}
+
+function overviewPills(profile) {
+  return [
+    ["Paper Type", profile.paper_type],
+    ["Trajectory", profile.trajectory],
+    ["Pages", profile.page_count],
+    ["Formalism", profile.formalism_role],
+  ].filter(([, value]) => value != null && value !== "");
+}
+
+function renderPaperSummary(profile) {
+  const equations = getExtractionItems(state.result, "equation");
+  const figures = getExtractionItems(state.result, "figure");
+  const algorithms = getExtractionItems(state.result, "algorithm");
+  const summary = [
+    profile.reasoning || "No profile summary was reported yet.",
+    `The pipeline identified ${equations.length} equations, ${figures.length} figures, and ${algorithms.length} algorithmic components, which makes this paper best read as a blend of mathematical modeling, neural architecture design, and empirical systems work.`,
+    keyComponentSentence(equations, figures, algorithms),
+  ].filter(Boolean);
+
+  return `<div class="summary-copy">${summary.map((line) => `<p>${escapeHtml(line)}</p>`).join("")}</div>`;
+}
+
+function keyComponentSentence(equations, figures, algorithms) {
+  const equation = equations[0]?.content;
+  const figure = normalizedMetadata(figures[0]).caption || figures[0]?.content;
+  const algorithm = normalizedMetadata(algorithms[0]).algorithm_name || algorithms[0]?.content;
+  const parts = [
+    equation ? `Representative equation: ${equation}` : "",
+    figure ? `Primary figure: ${figure}` : "",
+    algorithm ? `Main algorithmic idea: ${algorithm}` : "",
+  ].filter(Boolean);
+  return parts.join(" ");
+}
+
+function difficultyPercent(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return 50;
+  return Math.max(0, Math.min(100, number <= 10 ? number * 10 : number));
+}
+
+function formatDifficulty(value) {
+  const percent = difficultyPercent(value);
+  const label = percent >= 80 ? "Very High" : percent >= 65 ? "High" : percent >= 45 ? "Moderate" : "Accessible";
+  return `${label}${Number.isFinite(Number(value)) ? ` · ${escapeHtml(value)}/10` : ""}`;
+}
+
+function coreCompetencies(profile) {
+  const equations = getExtractionItems(state.result, "equation").length;
+  const figures = getExtractionItems(state.result, "figure").length;
+  const algorithms = getExtractionItems(state.result, "algorithm").length;
+  const commands = getExtractionItems(state.result, "command").length;
+  const difficulty = difficultyPercent(profile.difficulty_score) / 100;
+  return [
+    ["Mathematics", clampSkill(0.35 + equations * 0.07 + difficulty * 0.25)],
+    ["Algorithm", clampSkill(0.35 + algorithms * 0.055 + difficulty * 0.15)],
+    ["Deep Learning", clampSkill(0.62 + equations * 0.03 + figures * 0.025)],
+    ["Systems", clampSkill(0.3 + commands * 0.055 + algorithms * 0.025)],
+    ["Experimentation", clampSkill(0.38 + commands * 0.04 + figures * 0.03)],
+    ["Implementation", clampSkill(0.42 + commands * 0.045 + algorithms * 0.035)],
+  ];
+}
+
+function clampSkill(value) {
+  return Math.max(0.18, Math.min(0.96, value));
+}
+
+function renderSkillRadar(skills) {
+  const center = 120;
+  const maxRadius = 86;
+  const points = skills.map(([, value], index) => {
+    const angle = -Math.PI / 2 + (Math.PI * 2 * index) / skills.length;
+    const radius = maxRadius * value;
+    return [center + Math.cos(angle) * radius, center + Math.sin(angle) * radius];
+  });
+  const polygon = points.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
+  const rings = [0.33, 0.66, 1]
+    .map((scale) => {
+      const ring = skills
+        .map((_, index) => {
+          const angle = -Math.PI / 2 + (Math.PI * 2 * index) / skills.length;
+          return `${(center + Math.cos(angle) * maxRadius * scale).toFixed(1)},${(center + Math.sin(angle) * maxRadius * scale).toFixed(1)}`;
+        })
+        .join(" ");
+      return `<polygon points="${ring}" class="radar-ring"></polygon>`;
+    })
+    .join("");
+  const spokes = skills
+    .map((_, index) => {
+      const angle = -Math.PI / 2 + (Math.PI * 2 * index) / skills.length;
+      const x = center + Math.cos(angle) * maxRadius;
+      const y = center + Math.sin(angle) * maxRadius;
+      return `<line x1="${center}" y1="${center}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" class="radar-spoke"></line>`;
+    })
+    .join("");
+  const labels = skills
+    .map(([label, value], index) => {
+      const angle = -Math.PI / 2 + (Math.PI * 2 * index) / skills.length;
+      const x = center + Math.cos(angle) * (maxRadius + 30);
+      const y = center + Math.sin(angle) * (maxRadius + 30);
+      return `
+        <div class="skill-chip" style="--x:${x.toFixed(1)}px; --y:${y.toFixed(1)}px">
+          <span>${escapeHtml(label)}</span>
+          <strong>${Math.round(value * 100)}</strong>
+        </div>
+      `;
+    })
+    .join("");
+
+  return `
+    <div class="radar-wrap">
+      <svg class="skill-radar" viewBox="0 0 240 240" role="img" aria-label="Core competency radar">
+        ${rings}
+        ${spokes}
+        <polygon points="${polygon}" class="radar-area"></polygon>
+        ${points.map(([x, y]) => `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="4" class="radar-point"></circle>`).join("")}
+      </svg>
+      ${labels}
+    </div>
+  `;
 }
 
 function normalizedMetadata(item) {
@@ -1132,7 +1245,6 @@ function summaryObject() {
     github_url: state.result?.github_url || state.job?.github_url || state.repoUrl,
     status: state.result?.status || state.job?.status,
     overall_grounding_score: scoreFromState() == null ? null : formatPercent(scoreFromState()),
-    flagged_count: state.job?.flagged_count ?? state.result?.flagged_ids?.length ?? 0,
     total_extracted: state.job?.total_extracted ?? countExtracted(state.result),
   };
 }
@@ -1235,7 +1347,6 @@ function statusLine(job) {
   const parts = [
     "Pipeline processing",
     job.total_extracted != null ? `${job.total_extracted} extracted` : "",
-    job.flagged_count != null ? `${job.flagged_count} flagged` : "",
   ].filter(Boolean);
   return parts.join(" · ");
 }
