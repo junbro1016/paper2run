@@ -1,7 +1,12 @@
 const DEFAULT_API_BASE_URL = "https://paper2run.onrender.com";
 const LEGACY_API_BASE_URLS = new Set(["https://paper2run-production.up.railway.app"]);
 const SETTINGS_STORAGE_KEY = "paper2run.pipeline.frontend.settings";
-const POLL_INTERVAL_MS = 3000;
+const JOB_STORAGE_KEY = "paper2run.pipeline.frontend.lastJob";
+const POLL_INITIAL_INTERVAL_MS = 5000;
+const POLL_LATER_INTERVAL_MS = 12000;
+const POLL_FAST_WINDOW_MS = 60000;
+const FETCH_TIMEOUT_MS = 30000;
+const MAX_TRANSIENT_FETCH_RETRIES = 5;
 
 const savedSettings = loadSavedSettings();
 
@@ -17,6 +22,8 @@ const state = {
   flaggedOnly: false,
   busy: false,
   polling: false,
+  pollStartedAt: null,
+  transientFetchFailures: 0,
   mathTypesetTimer: null,
 };
 
@@ -56,6 +63,7 @@ elements.repoUrl.value = state.repoUrl;
 elements.apiBaseUrl.value = state.apiBaseUrl;
 
 wireEvents();
+restoreSavedJob();
 render();
 
 function wireEvents() {
@@ -134,6 +142,61 @@ function saveSettings() {
   }
 }
 
+function saveJobSnapshot(job = state.job) {
+  if (!job?.job_id) return;
+  try {
+    window.localStorage.setItem(
+      JOB_STORAGE_KEY,
+      JSON.stringify({
+        job_id: job.job_id,
+        status: job.status,
+        filename: job.filename,
+        github_url: job.github_url || state.repoUrl,
+        apiBaseUrl: state.apiBaseUrl,
+        overall_grounding_score: job.overall_grounding_score,
+        flagged_count: job.flagged_count,
+        total_extracted: job.total_extracted,
+        savedAt: Date.now(),
+      }),
+    );
+  } catch {
+    // Job recovery is a convenience, not a requirement.
+  }
+}
+
+function restoreSavedJob() {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(JOB_STORAGE_KEY) || "{}");
+    if (!saved.job_id) return;
+    state.job = {
+      job_id: saved.job_id,
+      status: saved.status || "processing",
+      filename: saved.filename,
+      github_url: saved.github_url,
+      overall_grounding_score: saved.overall_grounding_score,
+      flagged_count: saved.flagged_count,
+      total_extracted: saved.total_extracted,
+    };
+    state.repoUrl = saved.github_url || state.repoUrl;
+    state.apiBaseUrl = normalizeApiBaseUrl(saved.apiBaseUrl || state.apiBaseUrl);
+    elements.repoUrl.value = state.repoUrl;
+    elements.apiBaseUrl.value = state.apiBaseUrl;
+    if (saved.status === "done") {
+      addStatus(`Restored completed job: ${saved.job_id}. Fetching result.`, "pending");
+      state.busy = true;
+      fetchFullResult(saved.job_id).finally(() => setBusy(false));
+    } else {
+      addStatus(`Restored job: ${saved.job_id}`, "pending");
+      state.polling = true;
+      state.busy = true;
+      state.pollStartedAt = saved.savedAt || Date.now();
+      pollUntilDone(saved.job_id).finally(() => setBusy(false));
+    }
+  } catch {
+    // Ignore corrupt saved job metadata.
+  }
+}
+
 function apiUrl(path) {
   return `${state.apiBaseUrl.replace(/\/$/, "")}${path}`;
 }
@@ -190,6 +253,8 @@ async function runPipeline() {
   state.result = null;
   state.job = null;
   state.polling = true;
+  state.pollStartedAt = Date.now();
+  state.transientFetchFailures = 0;
   setBusy(true);
   render();
 
@@ -199,7 +264,7 @@ async function runPipeline() {
     formData.append("file", state.file);
     formData.append("github_url", state.repoUrl);
 
-    const startResponse = await fetch(apiUrl("/paper2run/run"), {
+    const startResponse = await fetchWithTimeout(apiUrl("/paper2run/run"), {
       method: "POST",
       body: formData,
     });
@@ -213,6 +278,7 @@ async function runPipeline() {
     }
 
     state.job = started;
+    saveJobSnapshot(started);
     addStatus(`Job started: ${started.job_id}`, "done");
     render();
 
@@ -233,13 +299,33 @@ async function runPipeline() {
 
 async function pollUntilDone(jobId) {
   while (state.polling) {
-    const response = await fetch(apiUrl(`/paper2run/jobs/${encodeURIComponent(jobId)}`));
-    const job = await readJsonResponse(response);
+    let response;
+    let job;
+    try {
+      response = await fetchWithTimeout(apiUrl(`/paper2run/jobs/${encodeURIComponent(jobId)}`));
+      job = await readJsonResponse(response);
+      state.transientFetchFailures = 0;
+    } catch (error) {
+      state.transientFetchFailures += 1;
+      if (state.transientFetchFailures <= MAX_TRANSIENT_FETCH_RETRIES) {
+        const waitMs = pollDelayMs();
+        addStatus(
+          `Temporary polling issue (${state.transientFetchFailures}/${MAX_TRANSIENT_FETCH_RETRIES}). Retrying in ${Math.round(
+            waitMs / 1000,
+          )}s.`,
+          "pending",
+        );
+        await delay(waitMs);
+        continue;
+      }
+      throw new Error(`Could not reach the pipeline API after retries: ${error.message}`);
+    }
     if (!response.ok) {
       throw new Error(errorMessage(job, `Job polling failed with HTTP ${response.status}`));
     }
 
     state.job = job;
+    saveJobSnapshot(job);
     render();
 
     if (job.status === "done") {
@@ -254,17 +340,18 @@ async function pollUntilDone(jobId) {
     }
 
     addStatus(statusLine(job), "pending");
-    await delay(POLL_INTERVAL_MS);
+    await delay(pollDelayMs());
   }
 }
 
 async function fetchFullResult(jobId) {
-  const response = await fetch(apiUrl(`/paper2run/jobs/${encodeURIComponent(jobId)}/result`));
+  const response = await fetchWithRetry(apiUrl(`/paper2run/jobs/${encodeURIComponent(jobId)}/result`));
   const result = await readJsonResponse(response);
   if (!response.ok) {
     throw new Error(errorMessage(result, `Result fetch failed with HTTP ${response.status}`));
   }
   state.result = result;
+  saveJobSnapshot({ ...result, status: "done" });
   state.activeTab = "overview";
   state.activeExtractionGroup = firstExtractionGroup(result) || "equations";
   addStatus("Result loaded", "done");
@@ -275,7 +362,7 @@ async function checkHealth({ silent = false } = {}) {
   if (!state.apiBaseUrl) return;
   elements.apiHealth.textContent = "Checking API health...";
   try {
-    const response = await fetch(apiUrl("/health"));
+    const response = await fetchWithTimeout(apiUrl("/health"));
     const payload = await readJsonResponse(response);
     if (!response.ok) {
       throw new Error(errorMessage(payload, `Health check failed with HTTP ${response.status}`));
@@ -322,6 +409,13 @@ function clearAll() {
   state.result = null;
   state.statuses = [];
   state.polling = false;
+  state.pollStartedAt = null;
+  state.transientFetchFailures = 0;
+  try {
+    window.localStorage.removeItem(JOB_STORAGE_KEY);
+  } catch {
+    // Ignore local storage failures.
+  }
   elements.pdfInput.value = "";
   renderFileMeta();
   render();
@@ -771,6 +865,41 @@ function statusLine(job) {
     job.flagged_count != null ? `${job.flagged_count} flagged` : "",
   ].filter(Boolean);
   return parts.join(" · ");
+}
+
+function pollDelayMs() {
+  const startedAt = state.pollStartedAt || Date.now();
+  return Date.now() - startedAt < POLL_FAST_WINDOW_MS ? POLL_INITIAL_INTERVAL_MS : POLL_LATER_INTERVAL_MS;
+}
+
+async function fetchWithTimeout(url, options = {}) {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
+async function fetchWithRetry(url, options = {}) {
+  let lastError;
+  for (let attempt = 1; attempt <= MAX_TRANSIENT_FETCH_RETRIES; attempt += 1) {
+    try {
+      return await fetchWithTimeout(url, options);
+    } catch (error) {
+      lastError = error;
+      if (attempt < MAX_TRANSIENT_FETCH_RETRIES) {
+        const waitMs = pollDelayMs();
+        addStatus(`Temporary fetch issue (${attempt}/${MAX_TRANSIENT_FETCH_RETRIES}). Retrying in ${Math.round(waitMs / 1000)}s.`, "pending");
+        await delay(waitMs);
+      }
+    }
+  }
+  throw lastError;
 }
 
 async function readJsonResponse(response) {
