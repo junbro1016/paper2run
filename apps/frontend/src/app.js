@@ -20,8 +20,6 @@ const state = {
   result: null,
   statuses: [],
   activeTab: "overview",
-  activeExtractionGroup: "equations",
-  flaggedOnly: false,
   busy: false,
   forceLanding: false,
   lastStageIndex: -1,
@@ -64,12 +62,9 @@ const elements = {
   tabs: [...document.querySelectorAll(".tab")],
   emptyState: document.querySelector("#emptyState"),
   overviewGrid: document.querySelector("#overviewGrid"),
-  extractionTabs: document.querySelector("#extractionTabs"),
-  extractionList: document.querySelector("#extractionList"),
-  flaggedOnly: document.querySelector("#flaggedOnly"),
-  mappingSummary: document.querySelector("#mappingSummary"),
-  mappingList: document.querySelector("#mappingList"),
-  runtimeList: document.querySelector("#runtimeList"),
+  equationList: document.querySelector("#equationList"),
+  figureList: document.querySelector("#figureList"),
+  algorithmList: document.querySelector("#algorithmList"),
 };
 
 // Calm, honest status copy keyed to the inferred step — no fake counters.
@@ -122,18 +117,30 @@ function wireEvents() {
     goToLanding();
   });
 
-  elements.mappingList?.addEventListener("click", (event) => {
+  document.querySelector(".response-result")?.addEventListener("click", (event) => {
     const button = event.target.closest(".code-copy");
-    if (!button) return;
-    const code = button.closest(".code-card")?.querySelector(".code-body code");
-    const text = code?.dataset.raw ?? code?.textContent ?? "";
-    navigator.clipboard?.writeText(text).then(
-      () => {
-        button.textContent = "Copied";
-        window.setTimeout(() => (button.textContent = "Copy"), 1400);
-      },
-      () => {},
-    );
+    if (button) {
+      event.preventDefault();
+      event.stopPropagation();
+      const code = button.closest(".code-card")?.querySelector(".code-body code");
+      const text = code?.dataset.raw ?? code?.textContent ?? "";
+      navigator.clipboard?.writeText(text).then(
+        () => {
+          button.textContent = "Copied";
+          window.setTimeout(() => (button.textContent = "Copy"), 1400);
+        },
+        () => {},
+      );
+      return;
+    }
+
+    const codeBody = event.target.closest(".code-scroll");
+    if (!codeBody) return;
+    const link = codeBody.closest(".code-card")?.dataset.link;
+    if (link && link !== "#") {
+      event.preventDefault();
+      window.open(link, "_blank", "noreferrer");
+    }
   });
 
   elements.suggestions.forEach((button) => {
@@ -156,16 +163,11 @@ function wireEvents() {
     elements.jsonInput.value = "";
   });
 
-  elements.flaggedOnly.addEventListener("change", () => {
-    state.flaggedOnly = elements.flaggedOnly.checked;
-    renderMappings();
-  });
-
   elements.tabs.forEach((tab) => {
     tab.addEventListener("click", () => {
       state.activeTab = tab.dataset.tab;
       renderTabs();
-      if (state.activeTab === "grounding") enhanceCodeBlocks();
+      enhanceCodeBlocks();
     });
   });
 }
@@ -437,7 +439,6 @@ async function fetchFullResult(jobId) {
   state.result = result;
   saveJobSnapshot({ ...result, status: "done" });
   state.activeTab = "overview";
-  state.activeExtractionGroup = firstExtractionGroup(result) || "equations";
   addStatus("Result loaded", "done");
   render();
 }
@@ -475,7 +476,6 @@ async function loadResultJson(file) {
       total_extracted: countExtracted(state.result),
     };
     state.activeTab = "overview";
-    state.activeExtractionGroup = firstExtractionGroup(state.result) || "equations";
     addStatus(`Loaded result JSON: ${file.name}`, "done");
     render();
   } catch (error) {
@@ -601,11 +601,10 @@ function render() {
   renderHeader();
   renderTabs();
   renderOverview();
-  renderExtractions();
-  renderMappings();
-  renderRuntime();
+  renderEvidenceTabs();
   updateControls();
   scheduleMathTypeset();
+  enhanceCodeBlocks();
 }
 
 function renderJob() {
@@ -658,7 +657,7 @@ function renderOverview() {
 
   elements.emptyState.style.display = "none";
   const profile = state.result.profile || state.job?.profile_summary || {};
-  const plan = Array.isArray(state.result.plan) ? state.result.plan : state.job?.plan_summary || [];
+  const representativeFigure = getExtractionItems(state.result, "figure")[0];
   const overviewStats = [
     ["Paper Type", profile.paper_type],
     ["Trajectory", profile.trajectory],
@@ -670,7 +669,7 @@ function renderOverview() {
 
   elements.overviewGrid.innerHTML = [
     infoCard(
-      "Profile",
+      "Paper Overview",
       `
         <div class="profile-hero">
           <p>${escapeHtml(profile.reasoning || "No profile reasoning reported yet.")}</p>
@@ -678,46 +677,11 @@ function renderOverview() {
         </div>
         ${renderKeyValues({ sections_present: profile.sections_present })}
       `,
-      "is-wide is-profile",
+      "is-profile",
     ),
+    infoCard("Representative Figure", renderRepresentativeFigure(representativeFigure), "is-figure"),
     infoCard("Run Summary", renderKeyValues(summaryObject()), "is-summary"),
-    infoCard("Plan", renderPlan(plan), "is-wide"),
   ].join("");
-}
-
-function renderExtractions() {
-  const groups = extractionGroups(state.result);
-  if (!groups.length) {
-    elements.extractionTabs.innerHTML = "";
-    elements.extractionList.innerHTML = `<div class="empty-note">No extraction result yet.</div>`;
-    return;
-  }
-
-  if (!groups.some(([key]) => key === state.activeExtractionGroup)) {
-    state.activeExtractionGroup = groups[0][0];
-  }
-
-  elements.extractionTabs.innerHTML = groups
-    .map(
-      ([key, items]) =>
-        `<button class="subtab ${key === state.activeExtractionGroup ? "is-active" : ""}" type="button" data-group="${escapeHtml(
-          key,
-        )}">${escapeHtml(formatExtractorType(key))} · ${items.length}</button>`,
-    )
-    .join("");
-
-  elements.extractionTabs.querySelectorAll(".subtab").forEach((button) => {
-    button.addEventListener("click", () => {
-      state.activeExtractionGroup = button.dataset.group;
-      renderExtractions();
-      scheduleMathTypeset();
-    });
-  });
-
-  const activeItems = groups.find(([key]) => key === state.activeExtractionGroup)?.[1] || [];
-  elements.extractionList.innerHTML = activeItems.length
-    ? activeItems.map((item, index) => renderComponentCard(item, index)).join("")
-    : `<div class="empty-note">No items in this extraction group.</div>`;
 }
 
 const STATUS_RANK = { verified: 0, weak: 1, no_match: 2, unknown: 3, hallucinated: 4 };
@@ -726,143 +690,205 @@ function statusRank(status) {
   return STATUS_RANK[String(status || "unknown").toLowerCase()] ?? 3;
 }
 
-function renderMappings() {
-  const mappings = Array.isArray(state.result?.mappings) ? state.result.mappings : [];
-  const flagged = new Set(state.result?.flagged_ids || []);
-  const visible = state.flaggedOnly
-    ? mappings.filter((mapping) => flagged.has(mapping.component_id) || mapping.verification_status !== "verified")
-    : mappings.slice();
-
-  // Surface trustworthy evidence first; push hallucinated/no-match to the bottom.
-  visible.sort((a, b) => statusRank(a.verification_status) - statusRank(b.verification_status));
-
-  elements.mappingSummary.textContent = `${mappings.length} mappings · ${flagged.size} flagged`;
-
-  if (!visible.length) {
-    elements.mappingList.innerHTML = `<div class="empty-note">No grounding mappings yet.</div>`;
-    return;
-  }
-
-  elements.mappingList.innerHTML = visible.map((mapping) => renderMappingCard(mapping)).join("");
-  if (state.activeTab === "grounding") enhanceCodeBlocks();
+function normalizedMetadata(item) {
+  return item?.metadata && typeof item.metadata === "object" ? item.metadata : {};
 }
 
-function renderRuntime() {
-  const runtime = Array.isArray(state.result?.runtime_log)
-    ? state.result.runtime_log
-    : Array.isArray(state.job?.runtime_log)
-      ? state.job.runtime_log
-      : [];
-
-  if (!runtime.length) {
-    elements.runtimeList.innerHTML = `<div class="empty-note">Runtime log will appear after the pipeline reports it.</div>`;
-    return;
-  }
-
-  elements.runtimeList.innerHTML = runtime.map((entry) => renderRuntimeItem(entry)).join("");
-}
-
-function renderComponentCard(item, index) {
-  const metadata = item.metadata && typeof item.metadata === "object" ? item.metadata : {};
-  const location = item.location && typeof item.location === "object" ? item.location : {};
-  const title =
-    item.algorithm_name ||
-    item.command_type ||
-    item.figure_id ||
-    item.caption ||
-    item.content ||
-    item.role ||
-    item.id ||
-    `Item ${index + 1}`;
-  const meta = [
-    item.id ? `id ${item.id}` : "",
-    item.type ? `type ${item.type}` : "",
-    item.page != null ? `page ${item.page}` : "",
-    location.page != null ? `page ${location.page}` : "",
+function componentLocation(item) {
+  const location = item?.location && typeof item.location === "object" ? item.location : {};
+  return [
     location.section ? `section ${location.section}` : "",
-    item.confidence != null ? `confidence ${formatPercent(item.confidence)}` : "",
-    item.role ? `role ${item.role}` : "",
-    metadata.role_label ? `role ${metadata.role_label}` : "",
-    item.figure_type ? `type ${item.figure_type}` : "",
-    item.framework ? `framework ${item.framework}` : "",
-  ].filter(Boolean);
-
-  const body = [
-    metadata.latex ? `<div class="latex">\\[${escapeHtml(metadata.latex)}\\]</div>` : "",
-    item.latex ? `<div class="latex">\\[${escapeHtml(item.latex)}\\]</div>` : "",
-    item.raw_command ? `<pre class="code-block">${escapeHtml(item.raw_command)}</pre>` : "",
-    item.content ? `<div class="text-block">${escapeHtml(item.content)}</div>` : "",
-    item.steps_summary ? `<div class="text-block">${escapeHtml(item.steps_summary)}</div>` : "",
-    item.description ? `<div class="text-block">${escapeHtml(item.description)}</div>` : "",
-    item.caption ? `<div class="text-block">${escapeHtml(item.caption)}</div>` : "",
-    item.key_insight ? `<div class="text-block">${escapeHtml(item.key_insight)}</div>` : "",
-    item.context ? `<div class="text-block">${escapeHtml(item.context)}</div>` : "",
+    location.page != null ? `page ${location.page}` : "",
+    item?.page != null ? `page ${item.page}` : "",
   ]
     .filter(Boolean)
-    .join("");
+    .join(" · ");
+}
+
+function componentTitle(item, type, index) {
+  const metadata = normalizedMetadata(item);
+  return (
+    metadata.algorithm_name ||
+    item.algorithm_name ||
+    metadata.caption ||
+    item.caption ||
+    metadata.latex ||
+    item.latex ||
+    item.content ||
+    metadata.key_insight ||
+    item.description ||
+    item.id ||
+    `${type} ${index + 1}`
+  );
+}
+
+function renderComponentBody(item, type) {
+  const metadata = normalizedMetadata(item);
+  const parts = [];
+
+  if (type === "equation") {
+    const latex = metadata.latex || item.latex;
+    if (latex) parts.push(`<div class="latex">\\[${escapeHtml(latex)}\\]</div>`);
+  }
+
+  if (type === "figure") {
+    parts.push(renderFigurePanel(item));
+  }
+
+  if (type === "algorithm") {
+    const steps = metadata.steps_summary || item.steps_summary;
+    if (steps) parts.push(`<div class="text-block">${escapeHtml(steps)}</div>`);
+    if (Array.isArray(metadata.inputs) || Array.isArray(metadata.outputs)) {
+      parts.push(renderKeyValues({ inputs: metadata.inputs, outputs: metadata.outputs }));
+    }
+  }
+
+  const description = [
+    item.content,
+    item.description,
+    metadata.key_insight,
+    metadata.caption && type !== "figure" ? metadata.caption : "",
+    item.context,
+  ]
+    .filter(Boolean)
+    .filter((value, index, array) => array.indexOf(value) === index)
+    .join("\n\n");
+  if (description) parts.push(`<div class="text-block">${escapeHtml(description)}</div>`);
+
+  const meta = {
+    role: item.role || metadata.role_label,
+    figure_type: metadata.figure_type || item.figure_type,
+    framework: metadata.framework || item.framework,
+    confidence: item.confidence,
+  };
+  parts.push(renderKeyValues(meta));
+
+  return parts.filter(Boolean).join("") || renderKeyValues(item);
+}
+
+function renderFigurePanel(item) {
+  const metadata = normalizedMetadata(item);
+  const caption = metadata.caption || item.caption || item.content || item.id || "Extracted figure";
+  const insight = metadata.key_insight || item.content || item.description || "";
+  return `
+    <div class="figure-panel">
+      <div class="figure-visual" aria-hidden="true">
+        <span></span><span></span><span></span><span></span>
+        <i></i><i></i><i></i>
+      </div>
+      <div>
+        <strong>${escapeHtml(caption)}</strong>
+        ${insight ? `<p>${escapeHtml(insight)}</p>` : ""}
+      </div>
+    </div>
+  `;
+}
+
+function renderRepresentativeFigure(figure) {
+  if (!figure) return `<div class="empty-note">No figure was extracted from this paper.</div>`;
+  const metadata = normalizedMetadata(figure);
+  const caption = metadata.caption || figure.caption || figure.content || figure.id || "Representative figure";
+  const insight = metadata.key_insight || figure.content || figure.description || "";
+  const location = componentLocation(figure);
 
   return `
-    <article class="component-card">
-      <div class="card-kicker">${escapeHtml(formatExtractorType(item.type || state.activeExtractionGroup))}</div>
-      <h3>${escapeHtml(String(title).slice(0, 140))}</h3>
-      <div class="component-meta">${escapeHtml(meta.join(" · ") || "extracted component")}</div>
-      <div class="component-body">${body || renderKeyValues(item)}</div>
+    <article class="representative-figure">
+      <div class="figure-visual" aria-hidden="true">
+        <span></span><span></span><span></span><span></span>
+        <i></i><i></i><i></i>
+      </div>
+      <div>
+        <div class="card-kicker">${escapeHtml(location || "Figure")}</div>
+        <h3>${escapeHtml(caption)}</h3>
+        ${insight ? `<p>${escapeHtml(insight)}</p>` : ""}
+      </div>
     </article>
   `;
 }
 
-function renderMappingCard(mapping) {
+function renderEvidenceTabs() {
+  renderEvidenceList("equation", elements.equationList);
+  renderEvidenceList("figure", elements.figureList);
+  renderEvidenceList("algorithm", elements.algorithmList);
+}
+
+function renderEvidenceList(type, container) {
+  if (!container) return;
+  const items = getExtractionItems(state.result, type);
+  if (!items.length) {
+    container.innerHTML = `<div class="empty-note">No ${escapeHtml(type)} extraction result yet.</div>`;
+    return;
+  }
+
+  container.innerHTML = items.map((item, index) => renderEvidenceCard(type, item, index)).join("");
+}
+
+function renderEvidenceCard(type, item, index) {
+  const metadata = item.metadata && typeof item.metadata === "object" ? item.metadata : {};
+  const mappings = mappingsForComponent(item).sort(
+    (a, b) => statusRank(a.verification_status) - statusRank(b.verification_status),
+  );
+  const title = componentTitle(item, type, index);
+  const mappingCount = mappings.reduce((sum, mapping) => sum + Math.max(1, mapping.matches?.length || 0), 0);
+
+  return `
+    <article class="evidence-card component-card" data-kind="${escapeAttribute(type)}">
+      <div class="evidence-paper">
+        <div class="evidence-head">
+          <div>
+            <div class="card-kicker">${escapeHtml(type)} · ${escapeHtml(item.id || `${type}_${index + 1}`)}</div>
+            <h3>${escapeHtml(String(title).slice(0, 180))}</h3>
+          </div>
+          <span class="status-badge">${escapeHtml(mappingCount)} code links</span>
+        </div>
+        <div class="component-meta">${escapeHtml(componentMeta(item) || `${type} component`)}</div>
+        <div class="component-body">${renderComponentBody(item, type)}</div>
+      </div>
+      <div class="evidence-code">
+        <div class="pane-label">Grounded code mapping</div>
+        ${
+          mappings.length
+            ? mappings.map((mapping) => renderMappingEvidence(mapping)).join("")
+            : `<div class="empty-note">No code mapping was reported for this ${escapeHtml(type)}.</div>`
+        }
+      </div>
+    </article>
+  `;
+}
+
+function renderMappingEvidence(mapping) {
   const status = mapping.verification_status || "unknown";
-  const component = findComponent(mapping.component_id);
   const matches = Array.isArray(mapping.matches) ? mapping.matches : [];
-  const componentTitle = component
-    ? component.caption ||
-      component.description ||
-      component.algorithm_name ||
-      component.raw_command ||
-      component.content ||
-      component.id
-    : mapping.component_id;
   const bestConfidence = matches.length
     ? Math.max(...matches.map((match) => Number(match.confidence) || 0))
     : 0;
 
   return `
-    <article class="mapping-card" data-status="${escapeHtml(status)}">
+    <section class="mapping-card" data-status="${escapeHtml(status)}">
       <div class="mapping-head">
         <div>
-          <h3>${escapeHtml(mapping.component_type || "component")} · ${escapeHtml(mapping.component_id)}</h3>
-          <div class="mapping-meta">${escapeHtml(String(componentTitle || "No component preview").slice(0, 240))}</div>
+          <h3>${escapeHtml(mapping.component_id || "component")}</h3>
+          <div class="mapping-meta">Best confidence ${escapeHtml(formatPercent(bestConfidence))}</div>
         </div>
         <span class="status-badge" data-status="${escapeHtml(status)}">${escapeHtml(status)}</span>
       </div>
-      <div class="mapping-grid">
-        <section class="paper-pane">
-          <div class="pane-label">Paper component</div>
-          <p>${escapeHtml(String(componentTitle || "No component preview").slice(0, 420))}</p>
-          ${component ? `<div class="component-meta">${escapeHtml(componentMeta(component))}</div>` : ""}
-        </section>
-        <section class="code-pane">
-          <div class="pane-label">Code grounding · ${escapeHtml(formatPercent(bestConfidence))}</div>
-          ${
-            mapping.reviewer_note
-              ? `<div class="text-block">${escapeHtml(mapping.reviewer_note)}</div>`
-              : ""
-          }
-          <div class="match-list">
-            ${
-              matches.length
-                ? matches.map((match) => renderMatch(match)).join("")
-                : `<div class="empty-note">No match found.</div>`
-            }
-          </div>
-        </section>
+      ${
+        mapping.reviewer_note
+          ? `<div class="text-block reviewer-note">${escapeHtml(mapping.reviewer_note)}</div>`
+          : ""
+      }
+      <div class="match-list">
+        ${
+          matches.length
+            ? matches.map((match, index) => renderMatch(match, index)).join("")
+            : `<div class="empty-note">No match found.</div>`
+        }
       </div>
-    </article>
+    </section>
   `;
 }
 
-function renderMatch(match) {
+function renderMatch(match, index = 0) {
   const githubUrl = state.result?.github_url || state.job?.github_url || state.repoUrl;
   const link = buildGithubLineUrl(githubUrl, match.file, match.line_start, match.line_end);
   const file = match.file || "unknown file";
@@ -872,13 +898,15 @@ function renderMatch(match) {
   const snippet = match.matched_code_snippet || "";
 
   return `
-    <figure class="code-card"
+    <details class="code-card"
       data-file="${escapeAttribute(file)}"
       data-start="${escapeAttribute(match.line_start ?? "")}"
       data-end="${escapeAttribute(match.line_end ?? "")}"
       data-repo="${escapeAttribute(githubUrl || "")}"
-      data-snippet="${escapeAttribute(snippet)}">
-      <figcaption class="code-card-head">
+      data-link="${escapeAttribute(link)}"
+      data-snippet="${escapeAttribute(snippet)}"
+      ${index === 0 && snippet && snippet.length < 700 ? "open" : ""}>
+      <summary class="code-card-head">
         <span class="code-dot" aria-hidden="true"></span>
         <span class="code-file" title="${escapeAttribute(file)}">${escapeHtml(fileName)}</span>
         ${lineLabel ? `<span class="code-lines">${escapeHtml(lineLabel)}</span>` : ""}
@@ -886,13 +914,15 @@ function renderMatch(match) {
         <span class="code-spacer"></span>
         <button class="code-copy" type="button" title="Copy snippet">Copy</button>
         <a class="code-gh" href="${escapeAttribute(link)}" target="_blank" rel="noreferrer">GitHub ↗</a>
-      </figcaption>
+      </summary>
       ${match.semantic_link ? `<div class="code-semantic">${escapeHtml(match.semantic_link)}</div>` : ""}
+      <a class="code-open" href="${escapeAttribute(link)}" target="_blank" rel="noreferrer" title="Open this code location on GitHub">
       <div class="code-scroll" data-state="loading">
         <pre class="code-gutter" aria-hidden="true"></pre>
         <pre class="code-body"><code>${escapeHtml(snippet) || "// loading code from GitHub…"}</code></pre>
       </div>
-    </figure>
+      </a>
+    </details>
   `;
 }
 
@@ -1105,6 +1135,35 @@ function summaryObject() {
     flagged_count: state.job?.flagged_count ?? state.result?.flagged_ids?.length ?? 0,
     total_extracted: state.job?.total_extracted ?? countExtracted(state.result),
   };
+}
+
+function getExtractionItems(result, type) {
+  const key = `${type}_extractor`;
+  const direct = extractionItems(result?.extractions?.[key]);
+  if (direct.length) return direct;
+  return extractionGroups(result)
+    .filter(([groupKey]) => groupKey.includes(type))
+    .flatMap(([, items]) => items);
+}
+
+function componentIds(item) {
+  return [
+    item?.id,
+    item?.component_id,
+    item?.figure_id,
+    item?.algorithm_id,
+    item?.command_id,
+    item?.eq_number != null ? `eq_${item.eq_number}` : null,
+    item?.fig_number != null ? `fig_${item.fig_number}` : null,
+  ]
+    .filter(Boolean)
+    .map(String);
+}
+
+function mappingsForComponent(item) {
+  const ids = new Set(componentIds(item));
+  const mappings = Array.isArray(state.result?.mappings) ? state.result.mappings : [];
+  return mappings.filter((mapping) => ids.has(String(mapping.component_id)));
 }
 
 function extractionGroups(result) {

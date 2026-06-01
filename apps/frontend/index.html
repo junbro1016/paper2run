@@ -163,9 +163,9 @@
 
             <nav class="tabs" aria-label="Result views">
               <button class="tab is-active" type="button" data-tab="overview">Overview</button>
-              <button class="tab" type="button" data-tab="extractions">Extractions</button>
-              <button class="tab" type="button" data-tab="grounding">Grounding</button>
-              <button class="tab" type="button" data-tab="runtime">Runtime</button>
+              <button class="tab" type="button" data-tab="equations">Equations</button>
+              <button class="tab" type="button" data-tab="figure">Figure</button>
+              <button class="tab" type="button" data-tab="algorithm">Algorithm</button>
             </nav>
 
             <section id="overviewView" class="view is-active">
@@ -173,24 +173,16 @@
               <div id="overviewGrid" class="overview-grid"></div>
             </section>
 
-            <section id="extractionsView" class="view">
-              <div id="extractionTabs" class="subtabs"></div>
-              <div id="extractionList" class="component-list"></div>
+            <section id="equationsView" class="view">
+              <div id="equationList" class="component-list evidence-list"></div>
             </section>
 
-            <section id="groundingView" class="view">
-              <div class="toolbar">
-                <label class="toggle-row">
-                  <input id="flaggedOnly" type="checkbox" />
-                  Flagged only
-                </label>
-                <div id="mappingSummary" class="toolbar-note">No mappings yet.</div>
-              </div>
-              <div id="mappingList" class="mapping-list"></div>
+            <section id="figureView" class="view">
+              <div id="figureList" class="component-list evidence-list"></div>
             </section>
 
-            <section id="runtimeView" class="view">
-              <div id="runtimeList" class="runtime-list"></div>
+            <section id="algorithmView" class="view">
+              <div id="algorithmList" class="component-list evidence-list"></div>
             </section>
 
             <footer class="result-actions">
