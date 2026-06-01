@@ -7,6 +7,7 @@ const POLL_LATER_INTERVAL_MS = 12000;
 const POLL_FAST_WINDOW_MS = 60000;
 const FETCH_TIMEOUT_MS = 30000;
 const MAX_TRANSIENT_FETCH_RETRIES = 5;
+const JOB_RESTORE_TTL_MS = 30 * 60 * 1000;
 
 const PIPELINE_STEPS = ["Profile", "Extract", "Ground", "Verify"];
 
@@ -200,7 +201,7 @@ function saveJobSnapshot(job = state.job) {
       JSON.stringify({
         job_id: job.job_id,
         status: job.status,
-        filename: job.filename,
+        filename: job.filename || state.file?.name,
         github_url: job.github_url || state.repoUrl,
         apiBaseUrl: state.apiBaseUrl,
         overall_grounding_score: job.overall_grounding_score,
@@ -218,6 +219,10 @@ function restoreSavedJob() {
   try {
     const saved = JSON.parse(window.localStorage.getItem(JOB_STORAGE_KEY) || "{}");
     if (!saved.job_id) return;
+    if (shouldDiscardSavedJob(saved)) {
+      window.localStorage.removeItem(JOB_STORAGE_KEY);
+      return;
+    }
     state.job = {
       job_id: saved.job_id,
       status: saved.status || "processing",
@@ -245,6 +250,14 @@ function restoreSavedJob() {
   } catch {
     // Ignore corrupt saved job metadata.
   }
+}
+
+function shouldDiscardSavedJob(saved) {
+  const savedAt = Number(saved.savedAt) || 0;
+  const age = savedAt ? Date.now() - savedAt : Infinity;
+  const isDone = saved.status === "done";
+  const hasRunContext = Boolean(saved.filename || saved.github_url);
+  return (!isDone && age > JOB_RESTORE_TTL_MS) || (!isDone && !hasRunContext);
 }
 
 function apiUrl(path) {
@@ -458,6 +471,7 @@ async function loadResultJson(file) {
     const normalized = normalizeLoadedResult(result);
     state.forceLanding = false;
     state.polling = false;
+    state.busy = false;
     state.result = normalized;
     state.job = {
       job_id: state.result.job_id || "loaded-json",
@@ -470,10 +484,21 @@ async function loadResultJson(file) {
     };
     state.activeTab = "overview";
     state.activeExtractionGroup = firstExtractionGroup(state.result) || "equations";
+    state.repoUrl = state.result.github_url || state.repoUrl;
+    elements.repoUrl.value = state.repoUrl;
+    clearSavedJobSnapshot();
     addStatus(`Loaded result JSON: ${file.name}`, "done");
     render();
   } catch (error) {
     addStatus(`Could not load JSON: ${error.message}`, "error");
+  }
+}
+
+function clearSavedJobSnapshot() {
+  try {
+    window.localStorage.removeItem(JOB_STORAGE_KEY);
+  } catch {
+    // Ignore local storage failures.
   }
 }
 
@@ -627,11 +652,7 @@ function clearAll() {
   state.polling = false;
   state.pollStartedAt = null;
   state.transientFetchFailures = 0;
-  try {
-    window.localStorage.removeItem(JOB_STORAGE_KEY);
-  } catch {
-    // Ignore local storage failures.
-  }
+  clearSavedJobSnapshot();
   elements.pdfInput.value = "";
   renderFileMeta();
   render();
