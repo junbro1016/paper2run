@@ -455,8 +455,10 @@ async function loadResultJson(file) {
   try {
     const text = await file.text();
     const result = JSON.parse(text);
+    const normalized = normalizeLoadedResult(result);
     state.forceLanding = false;
-    state.result = normalizeLoadedResult(result);
+    state.polling = false;
+    state.result = normalized;
     state.job = {
       job_id: state.result.job_id || "loaded-json",
       status: state.result.status || "done",
@@ -476,8 +478,145 @@ async function loadResultJson(file) {
 }
 
 function normalizeLoadedResult(data) {
-  if (data.result && typeof data.result === "object") return data.result;
-  return data;
+  const payload = chooseResultPayload(data);
+  if (isLegacyExtractionPayload(payload)) return normalizeLegacyExtractionPayload(payload);
+  return mergeResultEnvelope(data, payload);
+}
+
+function chooseResultPayload(data) {
+  if (!data || typeof data !== "object") return {};
+  const candidates = [
+    data.result,
+    data.data?.result,
+    data.data,
+    data.payload,
+    data.output,
+    data,
+  ].filter((candidate) => candidate && typeof candidate === "object" && !Array.isArray(candidate));
+
+  return (
+    candidates.find((candidate) => isStandardResultPayload(candidate) || isLegacyExtractionPayload(candidate)) ||
+    candidates[0] ||
+    {}
+  );
+}
+
+function isStandardResultPayload(value) {
+  if (!value || typeof value !== "object") return false;
+  return Boolean(
+    value.profile ||
+      value.plan ||
+      value.extractions ||
+      value.mappings ||
+      value.flagged_ids ||
+      value.overall_grounding_score != null,
+  );
+}
+
+function isLegacyExtractionPayload(value) {
+  if (!value || typeof value !== "object") return false;
+  return Array.isArray(value.equations) || Array.isArray(value.figures);
+}
+
+function mergeResultEnvelope(envelope, payload) {
+  if (!payload || typeof payload !== "object") return {};
+  if (!envelope || envelope === payload || typeof envelope !== "object") return payload;
+  return {
+    ...payload,
+    job_id: payload.job_id || envelope.job_id,
+    filename: payload.filename || envelope.filename,
+    github_url:
+      payload.github_url ||
+      envelope.github_url ||
+      payload.github_repository?.url ||
+      envelope.github_repository?.url ||
+      payload.base_url ||
+      envelope.base_url,
+    status: payload.status || envelope.status || "done",
+    runtime_log: payload.runtime_log || envelope.runtime_log,
+  };
+}
+
+function normalizeLegacyExtractionPayload(data) {
+  const equations = Array.isArray(data.equations) ? data.equations : [];
+  const figures = Array.isArray(data.figures) ? data.figures : [];
+  const counts = data.code_mapping_counts || {};
+  const mapped = Number(counts.mapped_equations || 0) + Number(counts.mapped_figures || 0);
+  const total = Number(counts.total_equations || equations.length || 0) + Number(counts.total_figures || figures.length || 0);
+  const score = total > 0 ? mapped / total : null;
+
+  return {
+    job_id: data.job_id || data.equation_job?.job_id || data.figure_job?.job_id || "loaded-json",
+    filename: data.filename || data.equation_job?.filename || data.figure_job?.filename,
+    github_url: data.github_url || data.github_repository?.url || data.base_url,
+    status: data.status || "done",
+    profile: {
+      paper_type: "paper",
+      reasoning:
+        "Loaded from an extraction-oriented JSON file. It includes extracted paper components, but not the full side-by-side grounding map.",
+      equation_count: equations.length,
+      figure_count: figures.length,
+    },
+    plan: [
+      { priority: 1, extractor: "Equation extraction", focus: `${equations.length} equations loaded from JSON.` },
+      { priority: 2, extractor: "Figure extraction", focus: `${figures.length} figures loaded from JSON.` },
+      ...(total
+        ? [
+            {
+              priority: 3,
+              extractor: "Code mapping summary",
+              focus: `${mapped} of ${total} components were reported as mapped in this JSON.`,
+            },
+          ]
+        : []),
+    ],
+    extractions: {
+      equation_extractor: { items: equations.map(normalizeLegacyEquation) },
+      figure_extractor: { items: figures.map(normalizeLegacyFigure) },
+    },
+    mappings: Array.isArray(data.mappings) ? data.mappings : [],
+    flagged_ids: Array.isArray(data.flagged_ids) ? data.flagged_ids : [],
+    overall_grounding_score: data.overall_grounding_score ?? score,
+    runtime_log: [data.equation_job, data.figure_job].filter(Boolean),
+  };
+}
+
+function normalizeLegacyEquation(item, index) {
+  return {
+    id: item.id || `eq_${String(item.eq_number || index + 1).padStart(2, "0")}`,
+    type: "equation",
+    content: item.description || item.core_reason || item.context || `Equation ${index + 1}`,
+    location: {
+      section: item.section_hint,
+      page: item.page,
+    },
+    metadata: {
+      latex: item.latex,
+      role_label: item.role || item.importance_hint,
+    },
+    confidence: item.confidence,
+    ...item,
+  };
+}
+
+function normalizeLegacyFigure(item, index) {
+  return {
+    id: item.figure_id || item.id || `fig_${String(item.fig_number || index + 1).padStart(2, "0")}`,
+    type: "figure",
+    content: item.key_insight || item.caption || `Figure ${index + 1}`,
+    location: {
+      page: item.page,
+    },
+    metadata: {
+      caption: item.caption,
+      figure_type: item.figure_type,
+      key_insight: item.key_insight,
+      page_bbox: item.page_bbox,
+      image_url: item.image_url,
+    },
+    confidence: item.confidence,
+    ...item,
+  };
 }
 
 function clearAll() {
