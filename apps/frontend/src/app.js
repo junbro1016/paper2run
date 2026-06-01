@@ -10,6 +10,11 @@ const MAX_TRANSIENT_FETCH_RETRIES = 5;
 
 const PIPELINE_STEPS = ["Profile", "Extract", "Ground", "Verify"];
 
+// Figure preview state (crop figures out of an uploaded PDF by bbox).
+const paperPdf = { file: null, docFile: null, docPromise: null };
+const figureCropCache = new Map(); // figure id -> dataURL | null (null = attempted, failed)
+let pdfjsLibPromise = null;
+
 const savedSettings = loadSavedSettings();
 
 const state = {
@@ -64,6 +69,7 @@ const elements = {
   equationList: document.querySelector("#equationList"),
   figureList: document.querySelector("#figureList"),
   algorithmList: document.querySelector("#algorithmList"),
+  figurePdfInput: document.querySelector("#figurePdfInput"),
 };
 
 // Calm, honest status copy keyed to the inferred step — no fake counters.
@@ -114,6 +120,12 @@ function wireEvents() {
   elements.procBackBtn?.addEventListener("click", () => {
     state.polling = false;
     goToLanding();
+  });
+
+  elements.figurePdfInput?.addEventListener("change", () => {
+    const file = elements.figurePdfInput.files?.[0];
+    if (file) setPaperPdf(file);
+    elements.figurePdfInput.value = "";
   });
 
   document.querySelector(".response-result")?.addEventListener("click", (event) => {
@@ -462,6 +474,9 @@ async function loadResultJson(file) {
     const result = JSON.parse(text);
     state.forceLanding = false;
     state.result = normalizeLoadedResult(result);
+    figureCropCache.clear();
+    paperPdf.docFile = null;
+    paperPdf.docPromise = null;
     state.job = {
       job_id: state.result.job_id || "loaded-json",
       status: state.result.status || "done",
@@ -931,21 +946,170 @@ function figureImageUrl(item) {
 }
 
 function figureVisual(item, caption) {
-  const url = figureImageUrl(item);
-  if (url) {
+  const id = item.id || "";
+  const src = figureImageUrl(item) || figureCropCache.get(id) || "";
+  if (src) {
     return `
-      <figure class="figure-image">
-        <img src="${escapeAttribute(url)}" alt="${escapeAttribute(caption)}" loading="lazy"
+      <figure class="figure-image" data-fig="${escapeAttribute(id)}">
+        <img src="${escapeAttribute(src)}" alt="${escapeAttribute(caption)}" loading="lazy"
           onerror="this.closest('.figure-image').dataset.broken='1'" />
       </figure>
     `;
   }
+  const loading = Boolean(getPaperPdfFile()) && hasFigureBox(item) && !figureCropCache.has(id);
   return `
-    <div class="figure-visual" aria-hidden="true">
+    <div class="figure-visual${loading ? " is-loading" : ""}" data-fig="${escapeAttribute(id)}" aria-hidden="true">
       <span></span><span></span><span></span><span></span>
       <i></i><i></i><i></i>
     </div>
   `;
+}
+
+/* ---- Figure preview: crop the figure region out of the uploaded PDF ---- */
+function figureBox(item) {
+  const metadata = normalizedMetadata(item);
+  const bbox = metadata.page_bbox || item.page_bbox;
+  return Array.isArray(bbox) && bbox.length >= 4 ? bbox.map(Number) : null;
+}
+
+function figurePageNumber(item) {
+  const metadata = normalizedMetadata(item);
+  const location = item.location && typeof item.location === "object" ? item.location : {};
+  const page = Number(location.page ?? item.page ?? metadata.page);
+  return Number.isFinite(page) && page > 0 ? page : null;
+}
+
+function hasFigureBox(item) {
+  return Boolean(figureBox(item) && figurePageNumber(item));
+}
+
+function getPaperPdfFile() {
+  if (paperPdf.file) return paperPdf.file;
+  if (state.file && /\.pdf$/i.test(state.file.name || "")) return state.file;
+  return null;
+}
+
+function setPaperPdf(file) {
+  if (!file) return;
+  paperPdf.file = file;
+  paperPdf.docFile = null;
+  paperPdf.docPromise = null;
+  figureCropCache.clear();
+  renderEvidenceTabs();
+  ensureFigureCrops();
+}
+
+const PDFJS_VERSION = "4.7.76";
+
+async function loadPdfjs() {
+  if (!pdfjsLibPromise) {
+    pdfjsLibPromise = (async () => {
+      const lib = await import(`https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDFJS_VERSION}/build/pdf.min.mjs`);
+      // Load the worker through a same-origin blob that re-imports the CDN
+      // module, so the cross-origin worker isn't blocked by the browser.
+      const workerBlob = new Blob(
+        [`import "https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDFJS_VERSION}/build/pdf.worker.min.mjs";`],
+        { type: "text/javascript" },
+      );
+      lib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(workerBlob);
+      return lib;
+    })();
+  }
+  return pdfjsLibPromise;
+}
+
+async function getPdfDoc() {
+  const file = getPaperPdfFile();
+  if (!file) return null;
+  if (!paperPdf.docPromise || paperPdf.docFile !== file) {
+    paperPdf.docFile = file;
+    paperPdf.docPromise = (async () => {
+      const lib = await loadPdfjs();
+      const data = await file.arrayBuffer();
+      return lib.getDocument({ data }).promise;
+    })();
+  }
+  return paperPdf.docPromise;
+}
+
+async function ensureFigureCrops() {
+  if (!state.result || !getPaperPdfFile()) return;
+  const figures = getExtractionItems(state.result, "figure");
+  let doc = null;
+  for (const figure of figures) {
+    const id = figure.id;
+    if (!id || figureImageUrl(figure) || figureCropCache.has(id)) continue;
+    if (!hasFigureBox(figure)) {
+      figureCropCache.set(id, null);
+      continue;
+    }
+    try {
+      doc = doc || (await getPdfDoc());
+      if (!doc) return;
+      const url = await cropFigure(doc, figurePageNumber(figure), figureBox(figure));
+      figureCropCache.set(id, url || null);
+      if (url) applyFigureCrop(id, url);
+    } catch {
+      figureCropCache.set(id, null);
+    }
+  }
+}
+
+async function cropFigure(doc, pageNo, bbox) {
+  if (!pageNo || pageNo > doc.numPages) return null;
+  const page = await doc.getPage(pageNo);
+  const scale = 2;
+  const viewport = page.getViewport({ scale });
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.ceil(viewport.width);
+  canvas.height = Math.ceil(viewport.height);
+  const task = page.render({ canvasContext: canvas.getContext("2d"), viewport });
+  // Guard against environments where canvas rasterization stalls.
+  await Promise.race([
+    task.promise,
+    new Promise((_, reject) =>
+      setTimeout(() => {
+        try {
+          task.cancel();
+        } catch {
+          // ignore
+        }
+        reject(new Error("render-timeout"));
+      }, 20000),
+    ),
+  ]);
+
+  const [x0, y0, x1, y1] = bbox;
+  const W = canvas.width;
+  const H = canvas.height;
+  const pad = 8;
+  const sx = Math.max(0, x0 * W - pad);
+  const sy = Math.max(0, y0 * H - pad);
+  const sw = Math.min(W - sx, (x1 - x0) * W + pad * 2);
+  const sh = Math.min(H - sy, (y1 - y0) * H + pad * 2);
+  if (sw < 4 || sh < 4) return null;
+
+  const out = document.createElement("canvas");
+  out.width = Math.ceil(sw);
+  out.height = Math.ceil(sh);
+  out.getContext("2d").drawImage(canvas, sx, sy, sw, sh, 0, 0, out.width, out.height);
+  return out.toDataURL("image/png");
+}
+
+function applyFigureCrop(id, url) {
+  if (!url) return;
+  const selector = window.CSS && CSS.escape ? CSS.escape(id) : id;
+  document.querySelectorAll(`[data-fig="${selector}"]`).forEach((el) => {
+    if (el.querySelector("img")) return;
+    const figure = document.createElement("figure");
+    figure.className = "figure-image";
+    figure.dataset.fig = id;
+    const img = document.createElement("img");
+    img.src = url;
+    img.alt = "";
+    figure.appendChild(img);
+    el.replaceWith(figure);
+  });
 }
 
 function renderFigurePanel(item) {
@@ -996,7 +1160,25 @@ function renderEvidenceList(type, container) {
     return;
   }
 
-  container.innerHTML = items.map((item, index) => renderEvidenceCard(type, item, index)).join("");
+  let prefix = "";
+  if (
+    type === "figure" &&
+    !getPaperPdfFile() &&
+    items.some((figure) => hasFigureBox(figure) && !figureImageUrl(figure))
+  ) {
+    prefix = `
+      <label class="figure-pdf-prompt" for="figurePdfInput">
+        <span class="figure-pdf-icon" aria-hidden="true">⇪</span>
+        <span class="figure-pdf-copy">
+          <strong>Attach the paper PDF to preview figures</strong>
+          <small>Figures are located by page region — the PDF is read in your browser only.</small>
+        </span>
+      </label>
+    `;
+  }
+
+  container.innerHTML = prefix + items.map((item, index) => renderEvidenceCard(type, item, index)).join("");
+  if (type === "figure") ensureFigureCrops();
 }
 
 function renderEvidenceCard(type, item, index) {

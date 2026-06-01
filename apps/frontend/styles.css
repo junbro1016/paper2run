@@ -1237,12 +1237,66 @@ body[data-stage="result"] .response-result {
   line-height: 1.55;
 }
 
+.figure-pdf-prompt {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 14px;
+  padding: 14px 18px;
+  border: 1px dashed rgba(52, 230, 168, 0.4);
+  border-radius: 14px;
+  background: rgba(52, 230, 168, 0.05);
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease;
+}
+
+.figure-pdf-prompt:hover {
+  border-color: var(--accent);
+  background: rgba(52, 230, 168, 0.09);
+}
+
+.figure-pdf-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  flex: none;
+  border-radius: 11px;
+  background: var(--surface-2);
+  color: var(--accent);
+  font-size: 18px;
+}
+
+.figure-pdf-copy {
+  display: grid;
+  gap: 2px;
+}
+
+.figure-pdf-copy strong {
+  font-size: 14px;
+  font-weight: 700;
+}
+
 .figure-image {
   margin: 0;
   overflow: hidden;
   border: 1px solid var(--glass-line);
   border-radius: 18px;
   background: rgba(0, 0, 0, 0.3);
+}
+
+.figure-visual.is-loading::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(52, 230, 168, 0.14) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
 }
 
 .figure-image img {
