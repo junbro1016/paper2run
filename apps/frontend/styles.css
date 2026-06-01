@@ -1500,6 +1500,42 @@ body[data-stage="result"] .response-result {
   gap: 12px;
 }
 
+.evidence-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.evidence-icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  flex: none;
+  border-radius: 11px;
+  border: 1px solid rgba(52, 230, 168, 0.28);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.evidence-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.evidence-icon[data-kind="figure"] {
+  border-color: rgba(90, 169, 239, 0.28);
+  background: rgba(90, 169, 239, 0.14);
+  color: var(--blue);
+}
+
+.evidence-icon[data-kind="algorithm"] {
+  border-color: rgba(232, 192, 87, 0.28);
+  background: rgba(232, 192, 87, 0.14);
+  color: var(--yellow);
+}
+
 .evidence-paper,
 .evidence-code {
   min-width: 0;

@@ -823,21 +823,44 @@ function componentLocation(item) {
     .join(" · ");
 }
 
+// Pull a human number from ids like "eq_01" / "fig_2", else fall back to order.
+function componentNumber(item, index) {
+  const match = String(item?.id || "").match(/(\d+)\s*$/);
+  return match ? parseInt(match[1], 10) : index + 1;
+}
+
 function componentTitle(item, type, index) {
   const metadata = normalizedMetadata(item);
+  // Equations are rendered as typeset math below, so the title is a clean
+  // label instead of raw LaTeX.
+  if (type === "equation") {
+    return `Equation ${componentNumber(item, index)}`;
+  }
   return (
     metadata.algorithm_name ||
     item.algorithm_name ||
     metadata.caption ||
     item.caption ||
-    metadata.latex ||
-    item.latex ||
-    item.content ||
     metadata.key_insight ||
     item.description ||
     item.id ||
-    `${type} ${index + 1}`
+    `${capitalize(type)} ${index + 1}`
   );
+}
+
+function capitalize(value) {
+  const text = String(value || "");
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+const COMPONENT_ICONS = {
+  equation: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 5H7l5 7-5 7h9"/></svg>',
+  figure: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.6"/><path d="M21 16l-5-5L5 20"/></svg>',
+  algorithm: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4H6a2 2 0 0 0-2 2v4l-2 2 2 2v4a2 2 0 0 0 2 2h2M16 4h2a2 2 0 0 1 2 2v4l2 2-2 2v4a2 2 0 0 1-2 2h-2"/></svg>',
+};
+
+function componentIcon(type) {
+  return COMPONENT_ICONS[type] || COMPONENT_ICONS.equation;
 }
 
 function renderComponentBody(item, type) {
@@ -953,9 +976,12 @@ function renderEvidenceCard(type, item, index) {
     <article class="evidence-card component-card" data-kind="${escapeAttribute(type)}">
       <div class="evidence-paper">
         <div class="evidence-head">
-          <div>
-            <div class="card-kicker">${escapeHtml(type)} · ${escapeHtml(item.id || `${type}_${index + 1}`)}</div>
-            <h3>${escapeHtml(String(title).slice(0, 180))}</h3>
+          <div class="evidence-title">
+            <span class="evidence-icon" data-kind="${escapeAttribute(type)}" aria-hidden="true">${componentIcon(type)}</span>
+            <div>
+              <div class="card-kicker">${escapeHtml(type)} · ${escapeHtml(item.id || `${type}_${index + 1}`)}</div>
+              <h3>${escapeHtml(String(title).slice(0, 180))}</h3>
+            </div>
           </div>
           <span class="status-badge">${escapeHtml(mappingCount)} code links</span>
         </div>
