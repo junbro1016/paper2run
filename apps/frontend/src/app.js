@@ -909,8 +909,23 @@ function renderComponentBody(item, type) {
 
 function figureImageUrl(item) {
   const metadata = normalizedMetadata(item);
-  const url = item.image_url || metadata.image_url || item.url || metadata.url || "";
-  return typeof url === "string" && /^https?:\/\//.test(url) ? url : "";
+  let url = String(
+    item.image_url ||
+      metadata.image_url ||
+      item.image ||
+      metadata.image ||
+      item.figure_url ||
+      metadata.figure_url ||
+      item.url ||
+      metadata.url ||
+      "",
+  ).trim();
+  if (!url) return "";
+  if (/^(https?:|data:)/.test(url)) return url;
+  // Resolve relative paths against the pipeline API host (figures may be served there).
+  const base = String(state.apiBaseUrl || "").replace(/\/$/, "");
+  if (!base) return "";
+  return url.startsWith("/") ? `${base}${url}` : `${base}/${url}`;
 }
 
 function figureVisual(item, caption) {
@@ -983,12 +998,10 @@ function renderEvidenceList(type, container) {
 }
 
 function renderEvidenceCard(type, item, index) {
-  const metadata = item.metadata && typeof item.metadata === "object" ? item.metadata : {};
   const mappings = mappingsForComponent(item).sort(
     (a, b) => statusRank(a.verification_status) - statusRank(b.verification_status),
   );
   const title = componentTitle(item, type, index);
-  const mappingCount = mappings.reduce((sum, mapping) => sum + Math.max(1, mapping.matches?.length || 0), 0);
 
   return `
     <article class="evidence-card component-card" data-kind="${escapeAttribute(type)}">
@@ -1001,18 +1014,21 @@ function renderEvidenceCard(type, item, index) {
               <h3>${escapeHtml(String(title).slice(0, 180))}</h3>
             </div>
           </div>
-          <span class="status-badge">${escapeHtml(mappingCount)} code links</span>
         </div>
         <div class="component-meta">${escapeHtml(componentMeta(item) || `${type} component`)}</div>
         <div class="component-body">${renderComponentBody(item, type)}</div>
       </div>
       <div class="evidence-code">
-        <div class="pane-label">Grounded code mapping</div>
-        ${
-          mappings.length
-            ? mappings.map((mapping) => renderMappingEvidence(mapping)).join("")
-            : `<div class="empty-note">No code mapping was reported for this ${escapeHtml(type)}.</div>`
-        }
+        <div class="code-pane-inner">
+          <div class="pane-label">Grounded code mapping</div>
+          <div class="grounded-scroll">
+            ${
+              mappings.length
+                ? mappings.map((mapping) => renderMappingEvidence(mapping)).join("")
+                : `<div class="empty-note">No code mapping was reported for this ${escapeHtml(type)}.</div>`
+            }
+          </div>
+        </div>
       </div>
     </article>
   `;
@@ -1059,16 +1075,17 @@ function renderMatch(match, index = 0) {
     match.line_start != null ? `L${match.line_start}${match.line_end ? `–${match.line_end}` : ""}` : "";
   const snippet = match.matched_code_snippet || "";
 
+  const hasCode = Boolean(snippet) || Number(match.line_start) > 0;
+
   return `
-    <details class="code-card"
+    <div class="code-card"
       data-file="${escapeAttribute(file)}"
       data-start="${escapeAttribute(match.line_start ?? "")}"
       data-end="${escapeAttribute(match.line_end ?? "")}"
       data-repo="${escapeAttribute(githubUrl || "")}"
       data-link="${escapeAttribute(link)}"
-      data-snippet="${escapeAttribute(snippet)}"
-      ${index === 0 && snippet && snippet.length < 700 ? "open" : ""}>
-      <summary class="code-card-head">
+      data-snippet="${escapeAttribute(snippet)}">
+      <div class="code-card-head">
         <span class="code-dot" aria-hidden="true"></span>
         <span class="code-file" title="${escapeAttribute(file)}">${escapeHtml(fileName)}</span>
         ${lineLabel ? `<span class="code-lines">${escapeHtml(lineLabel)}</span>` : ""}
@@ -1076,15 +1093,19 @@ function renderMatch(match, index = 0) {
         <span class="code-spacer"></span>
         <button class="code-copy" type="button" title="Copy snippet">Copy</button>
         <a class="code-gh" href="${escapeAttribute(link)}" target="_blank" rel="noreferrer">GitHub ↗</a>
-      </summary>
-      ${match.semantic_link ? `<div class="code-semantic">${escapeHtml(match.semantic_link)}</div>` : ""}
-      <a class="code-open" href="${escapeAttribute(link)}" target="_blank" rel="noreferrer" title="Open this code location on GitHub">
-      <div class="code-scroll" data-state="loading">
-        <pre class="code-gutter" aria-hidden="true"></pre>
-        <pre class="code-body"><code>${escapeHtml(snippet) || "// loading code from GitHub…"}</code></pre>
       </div>
-      </a>
-    </details>
+      ${match.semantic_link ? `<div class="code-semantic">${escapeHtml(match.semantic_link)}</div>` : ""}
+      ${
+        hasCode
+          ? `<a class="code-open" href="${escapeAttribute(link)}" target="_blank" rel="noreferrer" title="Open this code location on GitHub">
+              <div class="code-scroll" data-state="loading">
+                <pre class="code-gutter" aria-hidden="true"></pre>
+                <pre class="code-body"><code>${escapeHtml(snippet) || "// loading code from GitHub…"}</code></pre>
+              </div>
+            </a>`
+          : `<div class="code-none">No matching code location was provided.</div>`
+      }
+    </div>
   `;
 }
 
@@ -1198,6 +1219,7 @@ function paintCode(card, codeText, startLine) {
 async function enhanceCard(card) {
   if (card.dataset.enhanced) return;
   card.dataset.enhanced = "1";
+  if (!card.querySelector(".code-scroll")) return;
 
   const snippet = card.dataset.snippet || "";
   const start = Number(card.dataset.start);
@@ -1207,7 +1229,7 @@ async function enhanceCard(card) {
   // Default to the snippet the pipeline returned; upgrade to the real file when possible.
   if (snippet) paintCode(card, snippet, start || 1);
 
-  if (!repoInfo || !card.dataset.file || !Number.isFinite(start)) return;
+  if (!repoInfo || !card.dataset.file || !Number.isFinite(start) || start <= 0) return;
 
   const text = await fetchRepoFile(repoInfo.owner, repoInfo.repo, card.dataset.file);
   if (!text) return;

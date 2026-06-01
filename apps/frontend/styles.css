@@ -940,12 +940,6 @@ body[data-stage="result"] .response-result {
   border-bottom: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.04);
   font-size: 12px;
-  cursor: pointer;
-  list-style: none;
-}
-
-.code-card-head::-webkit-details-marker {
-  display: none;
 }
 
 .code-dot {
@@ -1522,15 +1516,7 @@ body[data-stage="result"] .response-result {
   grid-template-columns: minmax(280px, 0.9fr) minmax(360px, 1.1fr);
   gap: 18px;
   padding: 20px;
-  align-items: start;
-}
-
-/* Keep the grounded-code column from ballooning the card when code is
-   expanded — it scrolls internally instead of stretching the paper side. */
-.evidence-code {
-  max-height: 560px;
-  overflow-y: auto;
-  padding-right: 4px;
+  align-items: stretch;
 }
 
 .evidence-head,
@@ -1580,12 +1566,86 @@ body[data-stage="result"] .response-result {
 .evidence-paper,
 .evidence-code {
   min-width: 0;
+}
+
+.evidence-paper {
   display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+/* Right column matches the paper column's height; its content is absolutely
+   positioned so the (often long) code never inflates the shared row height —
+   the paper side drives it and the code list scrolls inside. */
+.evidence-code {
+  position: relative;
+  min-height: 260px;
+}
+
+.code-pane-inner {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
+.grounded-scroll {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.grounded-scroll > .mapping-card:last-child {
+  flex: 1 1 auto;
+}
+
+.evidence-code .mapping-card {
+  display: flex;
+  flex-direction: column;
   gap: 12px;
 }
 
+.evidence-code .mapping-card:last-child .match-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+  min-height: 0;
+}
+
+.evidence-code .mapping-card:last-child .match-list > .code-card:last-child,
+.evidence-code .mapping-card:last-child .match-list > .code-card:last-child .code-open {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.evidence-code .mapping-card:last-child .match-list > .code-card:last-child .code-scroll {
+  flex: 1;
+  min-height: 160px;
+  max-height: none;
+}
+
+.code-none {
+  display: grid;
+  place-items: center;
+  flex: 1;
+  min-height: 80px;
+  padding: 18px;
+  color: var(--faint);
+  font-size: 13px;
+  text-align: center;
+}
+
 .reviewer-note {
-  margin-top: 10px;
+  margin-top: 0;
 }
 
 .latex {
