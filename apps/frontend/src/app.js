@@ -7,7 +7,6 @@ const POLL_LATER_INTERVAL_MS = 12000;
 const POLL_FAST_WINDOW_MS = 60000;
 const FETCH_TIMEOUT_MS = 30000;
 const MAX_TRANSIENT_FETCH_RETRIES = 5;
-const JOB_RESTORE_TTL_MS = 30 * 60 * 1000;
 
 const PIPELINE_STEPS = ["Profile", "Extract", "Ground", "Verify"];
 
@@ -17,7 +16,6 @@ const state = {
   file: null,
   repoUrl: savedSettings.repoUrl || "",
   apiBaseUrl: normalizeApiBaseUrl(savedSettings.apiBaseUrl),
-  request: null,
   job: null,
   result: null,
   statuses: [],
@@ -43,7 +41,6 @@ const elements = {
   threadRepo: document.querySelector("#threadRepo"),
   procHeading: document.querySelector("#procHeading"),
   procStatus: document.querySelector("#procStatus"),
-  procMeta: document.querySelector("#procMeta"),
   procBackBtn: document.querySelector("#procBackBtn"),
   runForm: document.querySelector("#runForm"),
   pdfInput: document.querySelector("#pdfInput"),
@@ -75,6 +72,15 @@ const elements = {
   runtimeList: document.querySelector("#runtimeList"),
 };
 
+// Calm, honest status copy keyed to the inferred step — no fake counters.
+const STEP_CAPTIONS = [
+  "Reading the paper's structure and sections.",
+  "Extracting equations, figures, and algorithms.",
+  "Mapping each claim to your repository code.",
+  "Scoring and verifying the evidence.",
+  "Finalizing the evidence report.",
+];
+
 elements.repoUrl.value = state.repoUrl;
 elements.apiBaseUrl.value = state.apiBaseUrl;
 
@@ -90,14 +96,12 @@ function wireEvents() {
 
   elements.pdfInput.addEventListener("change", () => {
     state.file = elements.pdfInput.files?.[0] || null;
-    syncRequestDraft();
     renderFileMeta();
     updateControls();
   });
 
   elements.repoUrl.addEventListener("input", () => {
     state.repoUrl = elements.repoUrl.value.trim();
-    syncRequestDraft();
     saveSettings();
     updateControls();
   });
@@ -204,9 +208,8 @@ function saveJobSnapshot(job = state.job) {
       JSON.stringify({
         job_id: job.job_id,
         status: job.status,
-        filename: job.filename || state.file?.name,
+        filename: job.filename,
         github_url: job.github_url || state.repoUrl,
-        request: state.request,
         apiBaseUrl: state.apiBaseUrl,
         overall_grounding_score: job.overall_grounding_score,
         flagged_count: job.flagged_count,
@@ -223,10 +226,6 @@ function restoreSavedJob() {
   try {
     const saved = JSON.parse(window.localStorage.getItem(JOB_STORAGE_KEY) || "{}");
     if (!saved.job_id) return;
-    if (shouldDiscardSavedJob(saved)) {
-      window.localStorage.removeItem(JOB_STORAGE_KEY);
-      return;
-    }
     state.job = {
       job_id: saved.job_id,
       status: saved.status || "processing",
@@ -235,11 +234,6 @@ function restoreSavedJob() {
       overall_grounding_score: saved.overall_grounding_score,
       flagged_count: saved.flagged_count,
       total_extracted: saved.total_extracted,
-    };
-    state.request = saved.request || {
-      filename: saved.filename,
-      repoUrl: saved.github_url,
-      fileType: "PDF",
     };
     state.repoUrl = saved.github_url || state.repoUrl;
     state.apiBaseUrl = normalizeApiBaseUrl(saved.apiBaseUrl || state.apiBaseUrl);
@@ -250,44 +244,15 @@ function restoreSavedJob() {
       state.busy = true;
       fetchFullResult(saved.job_id).finally(() => setBusy(false));
     } else {
-      clearSavedJobSnapshot();
-      state.job = null;
-      state.polling = false;
-      state.busy = false;
+      addStatus(`Restored job: ${saved.job_id}`, "pending");
+      state.polling = true;
+      state.busy = true;
+      state.pollStartedAt = saved.savedAt || Date.now();
+      pollUntilDone(saved.job_id).finally(() => setBusy(false));
     }
   } catch {
     // Ignore corrupt saved job metadata.
   }
-}
-
-function syncRequestDraft() {
-  const filename = state.file?.name || state.request?.filename;
-  const repoUrl = elements.repoUrl?.value?.trim() || state.repoUrl || state.request?.repoUrl;
-  if (!filename && !repoUrl) return;
-  state.request = {
-    filename,
-    repoUrl,
-    fileSize: state.file?.size ?? state.request?.fileSize,
-    fileType: state.file?.type || state.request?.fileType || "application/pdf",
-  };
-}
-
-function captureRequestSnapshot({ filename, repoUrl, fileSize, fileType } = {}) {
-  state.request = {
-    filename: filename || state.file?.name || state.job?.filename || state.result?.filename || "paper.pdf",
-    repoUrl: repoUrl || state.repoUrl || state.job?.github_url || state.result?.github_url || "",
-    fileSize: fileSize ?? state.file?.size ?? state.request?.fileSize,
-    fileType: fileType || state.file?.type || state.request?.fileType || "application/pdf",
-  };
-  return state.request;
-}
-
-function shouldDiscardSavedJob(saved) {
-  const savedAt = Number(saved.savedAt) || 0;
-  const age = savedAt ? Date.now() - savedAt : Infinity;
-  const isDone = saved.status === "done";
-  const hasRunContext = Boolean(saved.filename || saved.github_url);
-  return (!isDone && age > JOB_RESTORE_TTL_MS) || (!isDone && !hasRunContext);
 }
 
 function apiUrl(path) {
@@ -341,18 +306,10 @@ function renderFileMeta() {
 }
 
 async function runPipeline() {
-  state.file = elements.pdfInput.files?.[0] || state.file;
-  state.repoUrl = elements.repoUrl.value.trim();
-  syncRequestDraft();
   if (!state.file || !state.repoUrl) return;
 
-  const request = captureRequestSnapshot();
   state.result = null;
-  state.job = {
-    status: "processing",
-    filename: request.filename,
-    github_url: request.repoUrl,
-  };
+  state.job = null;
   state.forceLanding = false;
   state.lastStageIndex = -1;
   state.polling = true;
@@ -380,11 +337,7 @@ async function runPipeline() {
       throw new Error("Pipeline response did not include a job_id.");
     }
 
-    state.job = {
-      ...started,
-      filename: started.filename || request.filename,
-      github_url: started.github_url || request.repoUrl,
-    };
+    state.job = started;
     saveJobSnapshot(started);
     addStatus(`Job started: ${started.job_id}`, "done");
     render();
@@ -394,8 +347,6 @@ async function runPipeline() {
     state.polling = false;
     state.job = {
       ...(state.job || {}),
-      filename: state.job?.filename || request.filename,
-      github_url: state.job?.github_url || request.repoUrl,
       status: "error",
       error: error.message,
     };
@@ -433,12 +384,8 @@ async function pollUntilDone(jobId) {
       throw new Error(errorMessage(job, `Job polling failed with HTTP ${response.status}`));
     }
 
-    state.job = {
-      ...job,
-      filename: job.filename || state.request?.filename,
-      github_url: job.github_url || state.request?.repoUrl,
-    };
-    saveJobSnapshot(state.job);
+    state.job = job;
+    saveJobSnapshot(job);
     logStageTransition();
     render();
 
@@ -478,8 +425,6 @@ async function fetchFullResult(jobId) {
   // values before the result view slides in, so it never snaps from 0.
   state.job = {
     ...(state.job || {}),
-    filename: state.job?.filename || state.request?.filename || result.filename,
-    github_url: state.job?.github_url || state.request?.repoUrl || result.github_url,
     status: "done",
     total_extracted: countExtracted(result),
     flagged_count: Array.isArray(result.flagged_ids) ? result.flagged_ids.length : 0,
@@ -516,210 +461,46 @@ async function checkHealth({ silent = false } = {}) {
 
 async function loadResultJson(file) {
   try {
-    clearSavedJobSnapshot();
     const text = await file.text();
     const result = JSON.parse(text);
-    const normalized = normalizeLoadedResult(result);
-    const request = captureRequestSnapshot({
-      filename: normalized.filename || file.name,
-      repoUrl: normalized.github_url || state.repoUrl,
-      fileSize: file.size,
-      fileType: file.type || "application/json",
-    });
     state.forceLanding = false;
-    state.polling = false;
-    state.busy = false;
-    state.file = file;
-    state.result = normalized;
+    state.result = normalizeLoadedResult(result);
     state.job = {
       job_id: state.result.job_id || "loaded-json",
       status: state.result.status || "done",
-      filename: state.result.filename || request.filename,
-      github_url: state.result.github_url || request.repoUrl,
+      filename: state.result.filename,
+      github_url: state.result.github_url,
       overall_grounding_score: state.result.overall_grounding_score,
       flagged_count: Array.isArray(state.result.flagged_ids) ? state.result.flagged_ids.length : null,
       total_extracted: countExtracted(state.result),
     };
     state.activeTab = "overview";
     state.activeExtractionGroup = firstExtractionGroup(state.result) || "equations";
-    state.repoUrl = state.result.github_url || request.repoUrl || state.repoUrl;
-    elements.repoUrl.value = state.repoUrl;
-    renderFileMeta();
     addStatus(`Loaded result JSON: ${file.name}`, "done");
     render();
   } catch (error) {
-    state.polling = false;
-    state.busy = false;
-    state.job = {
-      status: "error",
-      filename: file.name,
-      error: `Could not load JSON: ${error.message}`,
-    };
     addStatus(`Could not load JSON: ${error.message}`, "error");
-    render();
-  }
-}
-
-function clearSavedJobSnapshot() {
-  try {
-    window.localStorage.removeItem(JOB_STORAGE_KEY);
-  } catch {
-    // Ignore local storage failures.
   }
 }
 
 function normalizeLoadedResult(data) {
-  const payload = chooseResultPayload(data);
-  if (isLegacyExtractionPayload(payload)) return normalizeLegacyExtractionPayload(payload);
-  return mergeResultEnvelope(data, payload);
-}
-
-function chooseResultPayload(data) {
-  if (!data || typeof data !== "object") return {};
-  const candidates = [
-    data.result,
-    data.data?.result,
-    data.data,
-    data.payload,
-    data.output,
-    data,
-  ].filter((candidate) => candidate && typeof candidate === "object" && !Array.isArray(candidate));
-
-  return (
-    candidates.find((candidate) => isStandardResultPayload(candidate) || isLegacyExtractionPayload(candidate)) ||
-    candidates[0] ||
-    {}
-  );
-}
-
-function isStandardResultPayload(value) {
-  if (!value || typeof value !== "object") return false;
-  return Boolean(
-    value.profile ||
-      value.plan ||
-      value.extractions ||
-      value.mappings ||
-      value.flagged_ids ||
-      value.overall_grounding_score != null,
-  );
-}
-
-function isLegacyExtractionPayload(value) {
-  if (!value || typeof value !== "object") return false;
-  return Array.isArray(value.equations) || Array.isArray(value.figures);
-}
-
-function mergeResultEnvelope(envelope, payload) {
-  if (!payload || typeof payload !== "object") return {};
-  if (!envelope || envelope === payload || typeof envelope !== "object") return payload;
-  return {
-    ...payload,
-    job_id: payload.job_id || envelope.job_id,
-    filename: payload.filename || envelope.filename,
-    github_url:
-      payload.github_url ||
-      envelope.github_url ||
-      payload.github_repository?.url ||
-      envelope.github_repository?.url ||
-      payload.base_url ||
-      envelope.base_url,
-    status: payload.status || envelope.status || "done",
-    runtime_log: payload.runtime_log || envelope.runtime_log,
-  };
-}
-
-function normalizeLegacyExtractionPayload(data) {
-  const equations = Array.isArray(data.equations) ? data.equations : [];
-  const figures = Array.isArray(data.figures) ? data.figures : [];
-  const counts = data.code_mapping_counts || {};
-  const mapped = Number(counts.mapped_equations || 0) + Number(counts.mapped_figures || 0);
-  const total = Number(counts.total_equations || equations.length || 0) + Number(counts.total_figures || figures.length || 0);
-  const score = total > 0 ? mapped / total : null;
-
-  return {
-    job_id: data.job_id || data.equation_job?.job_id || data.figure_job?.job_id || "loaded-json",
-    filename: data.filename || data.equation_job?.filename || data.figure_job?.filename,
-    github_url: data.github_url || data.github_repository?.url || data.base_url,
-    status: data.status || "done",
-    profile: {
-      paper_type: "paper",
-      reasoning:
-        "Loaded from an extraction-oriented JSON file. It includes extracted paper components, but not the full side-by-side grounding map.",
-      equation_count: equations.length,
-      figure_count: figures.length,
-    },
-    plan: [
-      { priority: 1, extractor: "Equation extraction", focus: `${equations.length} equations loaded from JSON.` },
-      { priority: 2, extractor: "Figure extraction", focus: `${figures.length} figures loaded from JSON.` },
-      ...(total
-        ? [
-            {
-              priority: 3,
-              extractor: "Code mapping summary",
-              focus: `${mapped} of ${total} components were reported as mapped in this JSON.`,
-            },
-          ]
-        : []),
-    ],
-    extractions: {
-      equation_extractor: { items: equations.map(normalizeLegacyEquation) },
-      figure_extractor: { items: figures.map(normalizeLegacyFigure) },
-    },
-    mappings: Array.isArray(data.mappings) ? data.mappings : [],
-    flagged_ids: Array.isArray(data.flagged_ids) ? data.flagged_ids : [],
-    overall_grounding_score: data.overall_grounding_score ?? score,
-    runtime_log: [data.equation_job, data.figure_job].filter(Boolean),
-  };
-}
-
-function normalizeLegacyEquation(item, index) {
-  return {
-    id: item.id || `eq_${String(item.eq_number || index + 1).padStart(2, "0")}`,
-    type: "equation",
-    content: item.description || item.core_reason || item.context || `Equation ${index + 1}`,
-    location: {
-      section: item.section_hint,
-      page: item.page,
-    },
-    metadata: {
-      latex: item.latex,
-      role_label: item.role || item.importance_hint,
-    },
-    confidence: item.confidence,
-    ...item,
-  };
-}
-
-function normalizeLegacyFigure(item, index) {
-  return {
-    id: item.figure_id || item.id || `fig_${String(item.fig_number || index + 1).padStart(2, "0")}`,
-    type: "figure",
-    content: item.key_insight || item.caption || `Figure ${index + 1}`,
-    location: {
-      page: item.page,
-    },
-    metadata: {
-      caption: item.caption,
-      figure_type: item.figure_type,
-      key_insight: item.key_insight,
-      page_bbox: item.page_bbox,
-      image_url: item.image_url,
-    },
-    confidence: item.confidence,
-    ...item,
-  };
+  if (data.result && typeof data.result === "object") return data.result;
+  return data;
 }
 
 function clearAll() {
   state.file = null;
-  state.request = null;
   state.job = null;
   state.result = null;
   state.statuses = [];
   state.polling = false;
   state.pollStartedAt = null;
   state.transientFetchFailures = 0;
-  clearSavedJobSnapshot();
+  try {
+    window.localStorage.removeItem(JOB_STORAGE_KEY);
+  } catch {
+    // Ignore local storage failures.
+  }
   elements.pdfInput.value = "";
   renderFileMeta();
   render();
@@ -755,40 +536,6 @@ function renderStage() {
     stage = "landing";
   }
   document.body.dataset.stage = stage;
-
-  if (stage === "processing") startProcTimer();
-  else stopProcTimer();
-}
-
-let procTimer = null;
-
-function startProcTimer() {
-  if (procTimer) return;
-  updateProcMeta();
-  procTimer = window.setInterval(updateProcMeta, 1000);
-}
-
-function stopProcTimer() {
-  if (!procTimer) return;
-  window.clearInterval(procTimer);
-  procTimer = null;
-}
-
-// A quiet elapsed-time line so a slow backend never looks frozen.
-function updateProcMeta() {
-  if (!elements.procMeta) return;
-  if (state.job?.status === "error") {
-    elements.procMeta.textContent = "";
-    return;
-  }
-  const started = state.pollStartedAt || Date.now();
-  const seconds = Math.max(0, Math.floor((Date.now() - started) / 1000));
-  const clock = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
-  const note =
-    seconds > 90
-      ? "Still working — large repositories can take a few minutes."
-      : "This runs asynchronously; results appear automatically.";
-  elements.procMeta.textContent = `${clock} elapsed · ${note}`;
 }
 
 // The polling payload has no explicit stage field, so infer the current
@@ -811,28 +558,19 @@ function currentStageIndex() {
 }
 
 function renderThreadRequest() {
-  const file = state.result?.filename || state.job?.filename || state.request?.filename || state.file?.name;
+  const file = state.result?.filename || state.job?.filename || state.file?.name;
   if (elements.threadFile) elements.threadFile.textContent = file || "paper.pdf";
   if (elements.threadFileMeta) {
-    const size = state.file?.size ?? state.request?.fileSize;
-    const type = state.file?.type || state.request?.fileType || "PDF";
-    elements.threadFileMeta.textContent = size ? `${formatBytes(size)} · ${fileKindLabel(type)}` : fileKindLabel(type);
+    elements.threadFileMeta.textContent = state.file
+      ? `${formatBytes(state.file.size)} · PDF`
+      : "PDF";
   }
-  const repo = state.result?.github_url || state.job?.github_url || state.request?.repoUrl || state.repoUrl;
+  const repo = state.result?.github_url || state.job?.github_url || state.repoUrl;
   if (elements.threadRepo) {
     elements.threadRepo.textContent = repo ? repo.replace(/^https?:\/\//, "") : "repository";
     elements.threadRepo.href = repo || "#";
   }
 }
-
-// Calm, honest status copy keyed to the inferred step — no fake counters.
-const STEP_CAPTIONS = [
-  "Reading the paper's structure and sections.",
-  "Extracting equations, figures, and algorithms.",
-  "Mapping each claim to your repository code.",
-  "Scoring and verifying the evidence.",
-  "Finalizing the evidence report.",
-];
 
 function renderProcessing() {
   const job = state.job;
@@ -840,7 +578,7 @@ function renderProcessing() {
   const isError = job?.status === "error";
 
   if (elements.procHeading) {
-    const name = job?.filename || state.request?.filename || state.file?.name;
+    const name = job?.filename || state.file?.name;
     elements.procHeading.textContent = isError
       ? "Pipeline failed"
       : `Grounding ${name || "your paper"}…`;
@@ -891,7 +629,6 @@ function renderHeader() {
   const title =
     state.result?.filename ||
     state.job?.filename ||
-    state.request?.filename ||
     state.file?.name ||
     "Upload a paper to begin";
   elements.paperTitle.textContent = title;
@@ -1557,13 +1294,6 @@ function formatBytes(bytes) {
   const kb = bytes / 1024;
   if (kb < 1024) return `${kb.toFixed(1)} KB`;
   return `${(kb / 1024).toFixed(1)} MB`;
-}
-
-function fileKindLabel(type) {
-  const value = String(type || "").toLowerCase();
-  if (value.includes("json")) return "JSON";
-  if (value.includes("pdf")) return "PDF";
-  return String(type || "file").replace(/^application\//i, "").toUpperCase();
 }
 
 function delay(ms) {
