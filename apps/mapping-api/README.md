@@ -42,10 +42,10 @@ PORT=8787
 
 Most providers set `PORT` automatically. The included `Procfile` and `Dockerfile` both bind the service to `0.0.0.0`, which is required for external access.
 
-Railway deployment is configured by the repository-level `railway.json`. The production endpoint currently used by the frontend is:
+Render deployment is configured by the repository-level `render.yaml`. The production endpoint is:
 
 ```text
-https://web-production-148e8.up.railway.app/map
+https://paper2run-nevv.onrender.com/map
 ```
 
 ## Request Shape

@@ -24,8 +24,8 @@ This repository intentionally does not track specific paper PDFs or generated ex
 ├── scripts/
 │   ├── extract_paper_json.py
 │   └── link_paper_components_to_code.py
-├── Dockerfile             # Mapping API container for Railway
-├── railway.json           # Railway healthcheck/build configuration
+├── Dockerfile             # Mapping API container
+├── render.yaml            # Render web service blueprint
 └── README.md
 ```
 
@@ -44,18 +44,18 @@ The frontend ships with these defaults:
 
 ```text
 Paper2Run API: https://paper2run-production.up.railway.app
-Mapping API:   https://web-production-148e8.up.railway.app/map
+Mapping API:   https://paper2run-nevv.onrender.com/map
 ```
 
 The Mapping API healthcheck is:
 
 ```text
-https://web-production-148e8.up.railway.app/health
+https://paper2run-nevv.onrender.com/health
 ```
 
 ## Frontend
 
-The frontend is a static browser app under `apps/frontend`. It calls the existing Paper2Run backend directly for extraction and the deployed Mapping API for code-location enrichment. API URL edits are stored in browser local storage so local overrides survive refreshes.
+The frontend is a static browser app under `apps/frontend`. It calls the existing Paper2Run pipeline API directly for extraction, grounding, and visualization. API URL edits are stored in browser local storage so local overrides survive refreshes.
 
 Run it locally:
 
@@ -75,14 +75,12 @@ The UI supports:
 - PDF upload
 - GitHub repository URL input
 - Paper2Run API base URL configuration
-- Mapping API URL configuration with a deployed Railway default
-- equation extraction through `POST /papers/extract`
-- figure extraction through `POST /papers/figures/extract`
-- polling through `GET /jobs/{job_id}`
+- pipeline execution through `POST /paper2run/run`
+- polling through `GET /paper2run/jobs/{job_id}`
+- result loading through `GET /paper2run/jobs/{job_id}/result`
 - equation/figure visualization
 - loading an already enriched JSON file
 - downloading the current result JSON
-- code mapping through a configurable Mapping API URL
 
 ### Deploying the Frontend
 
@@ -93,11 +91,11 @@ Deploy `apps/frontend` as a static Vercel project:
 3. Leave build and install commands empty.
 4. Deploy.
 
-`apps/frontend/vercel.json` enables clean static URLs. No frontend environment variables are required because the production Paper2Run and Mapping API URLs are defined in `apps/frontend/src/app.js`.
+`apps/frontend/vercel.json` enables clean static URLs. No frontend environment variables are required because the production Paper2Run pipeline API URL is defined in `apps/frontend/src/app.js`.
 
 ### Mapping API Contract
 
-The extraction backend described in `backend_description.pdf` does not expose code-location mapping. The frontend therefore treats mapping as a separate API integration point.
+The extraction backend described in `backend_description.pdf` does not expose code-location mapping. The mapping API is a standalone integration point for enriching already extracted Paper2Run JSON.
 
 For local development, run the included wrapper around `scripts/link_paper_components_to_code.py`:
 
@@ -106,13 +104,11 @@ export OPENAI_API_KEY="..."
 python3 apps/mapping-api/server.py
 ```
 
-Then enter this URL in the frontend's `Mapping API` field:
+Use this URL from a compatible UI or direct API client:
 
 ```text
 http://127.0.0.1:8787/map
 ```
-
-After extraction completes and a GitHub repository URL is set, the `Map` button becomes available.
 
 ### Deploying the Mapping API
 
@@ -132,18 +128,18 @@ HOST=0.0.0.0
 PORT=<set by provider>
 ```
 
-On Railway:
+On Render:
 
-1. Create a new service from this GitHub repository.
+1. Create a new Web Service from this GitHub repository.
 2. Set `OPENAI_API_KEY` in the service environment variables.
-3. Keep the repository root as the service root so Railway can use the included `Dockerfile`.
-4. Confirm the healthcheck path is `/health`. `railway.json` already records this.
+3. Keep the repository root as the service root so Render can use the included `Dockerfile`.
+4. Confirm the healthcheck path is `/health`.
 5. Deploy.
 
 The active production Mapping API is:
 
 ```text
-https://web-production-148e8.up.railway.app/map
+https://paper2run-nevv.onrender.com/map
 ```
 
 For another provider, use the default start command from `Procfile`, or set:

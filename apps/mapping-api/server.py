@@ -71,6 +71,13 @@ def json_response(handler: BaseHTTPRequestHandler, status: int, payload: dict[st
     handler.wfile.write(body)
 
 
+def head_response(handler: BaseHTTPRequestHandler, status: int) -> None:
+    handler.send_response(status)
+    for key, value in cors_headers().items():
+        handler.send_header(key, value)
+    handler.end_headers()
+
+
 def read_json_body(handler: BaseHTTPRequestHandler, max_bytes: int) -> dict[str, Any]:
     length = int(handler.headers.get("Content-Length", "0"))
     if length <= 0:
@@ -214,6 +221,10 @@ def make_handler(service: MappingService, max_body_bytes: int) -> type[BaseHTTPR
                 )
                 return
             json_response(self, 404, {"error": "Not found"})
+
+        def do_HEAD(self) -> None:  # noqa: N802
+            path = urlparse(self.path).path
+            head_response(self, 200 if path in {"/", "/health"} else 404)
 
         def do_POST(self) -> None:  # noqa: N802
             path = urlparse(self.path).path
