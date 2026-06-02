@@ -165,6 +165,7 @@
               <button class="tab" type="button" data-tab="equations">Equations</button>
               <button class="tab" type="button" data-tab="figure">Figure</button>
               <button class="tab" type="button" data-tab="algorithm">Algorithm</button>
+              <button class="tab" type="button" data-tab="runbook">Runbook</button>
             </nav>
 
             <section id="overviewView" class="view is-active">
@@ -183,6 +184,20 @@
 
             <section id="algorithmView" class="view">
               <div id="algorithmList" class="component-list evidence-list"></div>
+            </section>
+
+            <section id="runbookView" class="view">
+              <div class="runbook-toolbar">
+                <div>
+                  <p class="eyebrow">Reproduction guide</p>
+                  <h3>Runbook</h3>
+                  <p id="runbookSummary" class="runbook-summary">
+                    Uses the repository README, requirements, and extracted commands to draft a reproducibility path.
+                  </p>
+                </div>
+                <button id="generateRunbookBtn" class="secondary-button" type="button">Generate Runbook</button>
+              </div>
+              <div id="runbookContent" class="runbook-content"></div>
             </section>
 
             <footer class="result-actions">

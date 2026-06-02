@@ -1,4 +1,5 @@
 const DEFAULT_API_BASE_URL = "https://paper2run.onrender.com";
+const DEFAULT_RUNBOOK_API_URL = "https://paper2run-nevv.onrender.com/runbook";
 const LEGACY_API_BASE_URLS = new Set(["https://paper2run-production.up.railway.app"]);
 const SETTINGS_STORAGE_KEY = "paper2run.pipeline.frontend.settings";
 const JOB_STORAGE_KEY = "paper2run.pipeline.frontend.lastJob";
@@ -23,6 +24,10 @@ const state = {
   apiBaseUrl: normalizeApiBaseUrl(savedSettings.apiBaseUrl),
   job: null,
   result: null,
+  runbook: null,
+  runbookMeta: null,
+  runbookBusy: false,
+  runbookError: "",
   statuses: [],
   activeTab: "overview",
   busy: false,
@@ -69,6 +74,9 @@ const elements = {
   equationList: document.querySelector("#equationList"),
   figureList: document.querySelector("#figureList"),
   algorithmList: document.querySelector("#algorithmList"),
+  generateRunbookBtn: document.querySelector("#generateRunbookBtn"),
+  runbookSummary: document.querySelector("#runbookSummary"),
+  runbookContent: document.querySelector("#runbookContent"),
   figurePdfInput: document.querySelector("#figurePdfInput"),
 };
 
@@ -114,6 +122,7 @@ function wireEvents() {
   elements.healthBtn.addEventListener("click", () => checkHealth());
   elements.clearBtn.addEventListener("click", clearAll);
   elements.downloadBtn.addEventListener("click", downloadResult);
+  elements.generateRunbookBtn?.addEventListener("click", () => generateRunbook({ force: true }));
 
   elements.newRunBtn?.addEventListener("click", () => goToLanding());
   elements.brandHome?.addEventListener("click", () => goToLanding());
@@ -178,6 +187,9 @@ function wireEvents() {
     tab.addEventListener("click", () => {
       state.activeTab = tab.dataset.tab;
       renderTabs();
+      if (state.activeTab === "runbook" && state.result && !state.runbook && !state.runbookBusy) {
+        generateRunbook();
+      }
       enhanceCodeBlocks();
     });
   });
@@ -304,6 +316,9 @@ function updateControls() {
   elements.clearBtn.disabled = state.busy && state.polling;
   elements.downloadBtn.disabled = !state.result;
   elements.healthBtn.disabled = state.busy;
+  if (elements.generateRunbookBtn) {
+    elements.generateRunbookBtn.disabled = !state.result || state.runbookBusy;
+  }
 }
 
 function renderFileMeta() {
@@ -320,6 +335,10 @@ async function runPipeline() {
   if (!state.file || !state.repoUrl) return;
 
   state.result = null;
+  state.runbook = null;
+  state.runbookMeta = null;
+  state.runbookError = "";
+  state.runbookBusy = false;
   state.job = null;
   state.forceLanding = false;
   state.lastStageIndex = -1;
@@ -445,10 +464,69 @@ async function fetchFullResult(jobId) {
   await delay(550);
 
   state.result = result;
+  state.runbook = result.runbook || null;
+  state.runbookMeta = result.runbook_meta || null;
+  state.runbookError = "";
+  state.runbookBusy = false;
   saveJobSnapshot({ ...result, status: "done" });
   state.activeTab = "overview";
   addStatus("Result loaded", "done");
   render();
+}
+
+async function generateRunbook({ force = false } = {}) {
+  if (!state.result || state.runbookBusy) return;
+  if (state.runbook && !force) return;
+
+  state.runbookBusy = true;
+  state.runbookError = "";
+  renderRunbook();
+  updateControls();
+
+  try {
+    addStatus("Generating reproduction runbook", "pending");
+    const response = await fetchWithRetry(DEFAULT_RUNBOOK_API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(buildRunbookPayload()),
+    });
+    const payload = await readJsonResponse(response);
+    if (!response.ok) {
+      throw new Error(errorMessage(payload, `Runbook generation failed with HTTP ${response.status}`));
+    }
+
+    state.runbook = payload.runbook || payload;
+    state.runbookMeta = {
+      github_repository: payload.github_repository,
+      source_files: payload.source_files,
+      commands_used: payload.commands_used,
+    };
+    state.result = {
+      ...state.result,
+      runbook: state.runbook,
+      runbook_meta: state.runbookMeta,
+    };
+    addStatus("Runbook generated", "done");
+  } catch (error) {
+    state.runbookError = error.message;
+    addStatus(error.message, "error");
+  } finally {
+    state.runbookBusy = false;
+    renderRunbook();
+    updateControls();
+  }
+}
+
+function buildRunbookPayload() {
+  const githubUrl = resolvedGithubUrl();
+  return {
+    ...state.result,
+    github_url: githubUrl,
+    github_repository: {
+      ...(state.result.github_repository || {}),
+      url: githubUrl,
+    },
+  };
 }
 
 async function checkHealth({ silent = false } = {}) {
@@ -474,6 +552,10 @@ async function loadResultJson(file) {
     const result = JSON.parse(text);
     state.forceLanding = false;
     state.result = normalizeLoadedResult(result);
+    state.runbook = state.result.runbook || null;
+    state.runbookMeta = state.result.runbook_meta || null;
+    state.runbookError = "";
+    state.runbookBusy = false;
     figureCropCache.clear();
     paperPdf.docFile = null;
     paperPdf.docPromise = null;
@@ -502,6 +584,10 @@ function clearAll() {
   state.file = null;
   state.job = null;
   state.result = null;
+  state.runbook = null;
+  state.runbookMeta = null;
+  state.runbookError = "";
+  state.runbookBusy = false;
   state.statuses = [];
   state.polling = false;
   state.pollStartedAt = null;
@@ -612,6 +698,7 @@ function render() {
   renderTabs();
   renderOverview();
   renderEvidenceTabs();
+  renderRunbook();
   updateControls();
   scheduleMathTypeset();
   enhanceCodeBlocks();
@@ -1152,6 +1239,164 @@ function renderEvidenceTabs() {
   renderEvidenceList("algorithm", elements.algorithmList);
 }
 
+function renderRunbook() {
+  if (!elements.runbookContent) return;
+
+  if (!state.result) {
+    elements.runbookSummary.textContent =
+      "Uses the repository README, requirements, and extracted commands to draft a reproducibility path.";
+    elements.runbookContent.innerHTML = `<div class="empty-note">No pipeline result yet.</div>`;
+    return;
+  }
+
+  if (state.runbookBusy) {
+    elements.runbookSummary.textContent =
+      "Reading repository docs and backend commands, then asking OpenAI for a reproduction plan.";
+    elements.runbookContent.innerHTML = `
+      <article class="runbook-loading">
+        <span class="hero-badge proc-badge"><i class="proc-spin" aria-hidden="true"></i> Generating</span>
+        <p>Combining README.md, requirements.txt, extracted commands, and paper evidence into a runbook.</p>
+      </article>
+    `;
+    return;
+  }
+
+  if (state.runbookError) {
+    elements.runbookSummary.textContent = "Runbook generation failed. You can retry when the API is available.";
+    elements.runbookContent.innerHTML = `<div class="empty-note">${escapeHtml(state.runbookError)}</div>`;
+    return;
+  }
+
+  if (!state.runbook) {
+    const commands = getExtractionItems(state.result, "command").length;
+    elements.runbookSummary.textContent = `${commands} backend command components detected. Generate a reproduction guide from repo docs and extracted evidence.`;
+    elements.runbookContent.innerHTML = `
+      <article class="runbook-empty">
+        <h3>Ready to build a reproduction runbook</h3>
+        <p>
+          The runbook API will inspect the GitHub repository README and requirements files,
+          combine them with backend-extracted command components, and ask OpenAI for an ordered
+          reproduction guide.
+        </p>
+      </article>
+    `;
+    return;
+  }
+
+  const runbook = state.runbook;
+  const meta = state.runbookMeta || {};
+  const repo = meta.github_repository || state.result.github_repository || {};
+  const sourceFiles = meta.source_files || {};
+  const commandsUsed = Array.isArray(meta.commands_used) ? meta.commands_used : [];
+  elements.runbookSummary.textContent = `${runbook.source_confidence || "unknown"} confidence · ${
+    repo.model || "OpenAI"
+  } · ${commandsUsed.length} commands considered`;
+
+  elements.runbookContent.innerHTML = `
+    <article class="runbook-hero">
+      <div>
+        <p class="eyebrow">Reproduction path</p>
+        <h3>${escapeHtml(runbook.title || "Paper reproduction runbook")}</h3>
+        <p>${escapeHtml(runbook.overview || "")}</p>
+      </div>
+      <div class="runbook-source-grid">
+        ${runbookSourcePill("Repository", repo.url || resolvedGithubUrl() || "unknown")}
+        ${runbookSourcePill("README", sourceFiles.readme?.found ? sourceFiles.readme.path : "not found")}
+        ${runbookSourcePill(
+          "Requirements",
+          sourceFiles.requirements?.found ? sourceFiles.requirements.path : "not found",
+        )}
+        ${runbookSourcePill("Commit", repo.commit ? String(repo.commit).slice(0, 10) : "HEAD")}
+      </div>
+    </article>
+    ${renderRunbookEnvironment(runbook.environment)}
+    ${renderRunbookStepSection("Setup", runbook.setup)}
+    ${renderRunbookStepSection("Data preparation", runbook.data_preparation)}
+    ${renderRunbookStepSection("Reproduction steps", runbook.reproduction_steps)}
+    ${renderRunbookStepSection("Evaluation", runbook.evaluation)}
+    ${renderRunbookList("Expected outputs", runbook.expected_outputs)}
+    ${renderRunbookStepSection("Troubleshooting", runbook.troubleshooting)}
+    ${renderRunbookList("Assumptions", runbook.assumptions)}
+    ${renderRunbookList("Open questions", runbook.open_questions)}
+    ${renderRunbookList("Source notes", runbook.source_notes)}
+  `;
+  enhanceCodeBlocks();
+}
+
+function renderRunbookEnvironment(environment) {
+  if (!environment || typeof environment !== "object") return "";
+  return `
+    <section class="runbook-section">
+      <h3>Environment</h3>
+      ${renderKeyValues({
+        package_manager: environment.package_manager,
+        python: environment.python,
+        frameworks: Array.isArray(environment.frameworks) ? environment.frameworks : [],
+        hardware: environment.hardware,
+      })}
+    </section>
+  `;
+}
+
+function renderRunbookStepSection(title, steps) {
+  if (!Array.isArray(steps) || !steps.length) return "";
+  return `
+    <section class="runbook-section">
+      <h3>${escapeHtml(title)}</h3>
+      <div class="runbook-step-list">
+        ${steps.map((step, index) => renderRunbookStep(step, index)).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function renderRunbookStep(step, index) {
+  const commands = Array.isArray(step.commands) ? step.commands.filter(Boolean) : [];
+  return `
+    <article class="runbook-step">
+      <span class="rank-badge">${escapeHtml(index + 1)}</span>
+      <div>
+        <h4>${escapeHtml(step.title || `Step ${index + 1}`)}</h4>
+        ${step.notes ? `<p>${escapeHtml(step.notes)}</p>` : ""}
+        ${
+          commands.length
+            ? commands
+                .map((command) => `
+                  <div class="code-card">
+                    <div class="code-head"><span>Command</span><button class="code-copy" type="button">Copy</button></div>
+                    <pre class="code-body"><code data-raw="${escapeAttribute(command)}">${escapeHtml(command)}</code></pre>
+                  </div>
+                `)
+                .join("")
+            : ""
+        }
+        ${step.source ? `<div class="component-meta">Source: ${escapeHtml(step.source)}</div>` : ""}
+      </div>
+    </article>
+  `;
+}
+
+function renderRunbookList(title, values) {
+  if (!Array.isArray(values) || !values.length) return "";
+  return `
+    <section class="runbook-section">
+      <h3>${escapeHtml(title)}</h3>
+      <ul class="runbook-list">
+        ${values.map((value) => `<li>${escapeHtml(value)}</li>`).join("")}
+      </ul>
+    </section>
+  `;
+}
+
+function runbookSourcePill(label, value) {
+  return `
+    <span class="metric-pill runbook-source-pill">
+      <small>${escapeHtml(label)}</small>
+      <strong>${escapeHtml(value)}</strong>
+    </span>
+  `;
+}
+
 function renderEvidenceList(type, container) {
   if (!container) return;
   const items = getExtractionItems(state.result, type);
@@ -1664,6 +1909,16 @@ function buildGithubLineUrl(repoUrl, file, lineStart, lineEnd) {
   const normalized = repoUrl.replace(/\/$/, "").replace(/\.git$/, "");
   const line = lineStart ? `#L${lineStart}${lineEnd ? `-L${lineEnd}` : ""}` : "";
   return `${normalized}/blob/HEAD/${file}${line}`;
+}
+
+function resolvedGithubUrl() {
+  return (
+    state.result?.github_repository?.url ||
+    state.result?.github_url ||
+    state.job?.github_url ||
+    state.repoUrl ||
+    ""
+  );
 }
 
 function formatKey(key) {

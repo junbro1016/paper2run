@@ -884,6 +884,146 @@ body[data-stage="result"] .response-result {
   display: block;
 }
 
+.runbook-toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: flex-start;
+  margin-bottom: 18px;
+}
+
+.runbook-toolbar h3,
+.runbook-toolbar p {
+  margin: 0;
+}
+
+.runbook-toolbar h3 {
+  margin-top: 4px;
+  font-size: 24px;
+}
+
+.runbook-summary {
+  margin-top: 6px !important;
+  max-width: 72ch;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.runbook-content,
+.runbook-step-list {
+  display: grid;
+  gap: 14px;
+}
+
+.runbook-empty,
+.runbook-loading,
+.runbook-hero,
+.runbook-section {
+  border: 1px solid var(--glass-line);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  box-shadow: var(--shadow-sm);
+}
+
+.runbook-empty,
+.runbook-loading {
+  padding: 22px;
+}
+
+.runbook-empty h3,
+.runbook-empty p,
+.runbook-loading p,
+.runbook-hero h3,
+.runbook-hero p,
+.runbook-section h3,
+.runbook-step h4,
+.runbook-step p {
+  margin: 0;
+}
+
+.runbook-empty p,
+.runbook-loading p,
+.runbook-hero p,
+.runbook-step p,
+.runbook-list {
+  color: var(--ink-soft);
+  line-height: 1.65;
+}
+
+.runbook-loading {
+  display: grid;
+  gap: 12px;
+}
+
+.runbook-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.38fr);
+  gap: 22px;
+  align-items: start;
+  padding: clamp(22px, 3vw, 30px);
+}
+
+.runbook-hero h3 {
+  margin-top: 8px;
+  font-size: clamp(24px, 3vw, 34px);
+  line-height: 1.08;
+}
+
+.runbook-hero p {
+  margin-top: 12px;
+  max-width: 76ch;
+}
+
+.runbook-source-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.runbook-source-pill {
+  width: 100%;
+}
+
+.runbook-source-pill strong {
+  overflow-wrap: anywhere;
+}
+
+.runbook-section {
+  display: grid;
+  gap: 14px;
+  padding: 20px;
+}
+
+.runbook-step {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  border: 1px solid var(--glass-line);
+  border-radius: 14px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.runbook-step h4 {
+  font-size: 16px;
+}
+
+.runbook-step p {
+  margin-top: 6px;
+}
+
+.runbook-step .code-card {
+  margin-top: 12px;
+}
+
+.runbook-list {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.runbook-list li + li {
+  margin-top: 8px;
+}
+
 .result-actions {
   display: flex;
   gap: 10px;
@@ -1861,7 +2001,8 @@ body[data-stage="result"] .response-result {
 
   .overview-grid,
   .overview-brief,
-  .evidence-card {
+  .evidence-card,
+  .runbook-hero {
     grid-template-columns: 1fr;
   }
 
@@ -1908,13 +2049,15 @@ body[data-stage="result"] .response-result {
 
   .runtime-item,
   .plan-item,
+  .runbook-step,
   .kv-item,
   .inline-input {
     grid-template-columns: 1fr;
   }
 
   .toolbar,
-  .mapping-head {
+  .mapping-head,
+  .runbook-toolbar {
     flex-direction: column;
     align-items: flex-start;
   }

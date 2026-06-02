@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
-"""Local HTTP wrapper for Paper2Run code-location mapping.
+"""Local HTTP wrapper for Paper2Run code-location mapping and runbooks.
 
 This service exposes:
 
   GET  /health
   POST /map
+  POST /runbook
 
 The frontend can call POST /map with the extracted Paper2Run JSON plus a
 `github_repository.url` value. The response is the same JSON enriched with
 `code_locations` for equations and figures.
+
+The frontend can call POST /runbook with a Paper2Run result. The service reads
+README/requirements files from the target GitHub repository, combines them with
+backend-extracted commands, and asks OpenAI to create a reproduction runbook.
 """
 
 from __future__ import annotations
@@ -18,10 +23,13 @@ import json
 import os
 import shutil
 import sys
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
+from urllib.request import Request, urlopen
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -31,15 +39,24 @@ if str(SCRIPTS_DIR) not in sys.path:
 
 from link_paper_components_to_code import (  # noqa: E402
     DEFAULT_MODEL,
+    OPENAI_RESPONSES_URL,
     choose_model,
     component_identity,
     enrich_component,
     ensure_repo,
+    extract_output_text,
     iter_code_files,
     list_openai_models,
     parse_github_repo,
+    read_text,
     repo_commit,
 )
+
+
+MAX_README_CHARS = 28_000
+MAX_REQUIREMENTS_CHARS = 14_000
+MAX_COMMANDS = 24
+MAX_COMPONENTS_PER_GROUP = 12
 
 
 def cors_headers() -> dict[str, str]:
@@ -86,6 +103,254 @@ def read_json_body(handler: BaseHTTPRequestHandler, max_bytes: int) -> dict[str,
         raise ValueError(f"Request body is too large: {length} bytes.")
     raw = handler.rfile.read(length)
     return json.loads(raw.decode("utf-8"))
+
+
+def trim_text(text: str, max_chars: int) -> str:
+    if len(text) <= max_chars:
+        return text
+    return f"{text[:max_chars]}\n\n[truncated: {len(text) - max_chars} chars omitted]"
+
+
+def find_repo_file(repo_dir: Path, names: tuple[str, ...], max_chars: int) -> dict[str, Any]:
+    lowered = {name.lower() for name in names}
+    candidates = [path for path in repo_dir.iterdir() if path.is_file() and path.name.lower() in lowered]
+
+    if not candidates:
+        for path in repo_dir.rglob("*"):
+            relative_parts = path.relative_to(repo_dir).parts
+            if any(part in {".git", "node_modules", "venv", ".venv"} for part in relative_parts):
+                continue
+            if path.is_file() and path.name.lower() in lowered:
+                candidates.append(path)
+                break
+
+    if not candidates:
+        return {"found": False, "path": "", "content": ""}
+
+    chosen = candidates[0]
+    return {
+        "found": True,
+        "path": chosen.relative_to(repo_dir).as_posix(),
+        "content": trim_text(read_text(chosen), max_chars),
+    }
+
+
+def collect_commands(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    commands: list[dict[str, Any]] = []
+
+    def looks_like_command(item: dict[str, Any]) -> bool:
+        command_keys = {"command_id", "command_type", "raw_command", "command", "shell", "cli", "script", "arguments"}
+        return any(key in item and item.get(key) for key in command_keys)
+
+    def add(item: dict[str, Any], group: str) -> None:
+        if not looks_like_command(item):
+            return
+        commands.append(
+            {
+                "source_group": group,
+                "command_id": item.get("command_id") or item.get("id") or item.get("component_id") or "",
+                "command_type": item.get("command_type") or item.get("type") or item.get("role") or "",
+                "raw_command": item.get("raw_command") or item.get("command") or item.get("shell") or "",
+                "description": item.get("description") or item.get("steps_summary") or item.get("context") or "",
+                "framework": item.get("framework") or "",
+                "confidence": item.get("confidence"),
+            }
+        )
+
+    for group_name in ("commands", "command", "run_commands"):
+        value = payload.get(group_name)
+        if isinstance(value, list):
+            for item in value:
+                if isinstance(item, dict):
+                    add(item, group_name)
+
+    extractions = payload.get("extractions")
+    if isinstance(extractions, dict):
+        for group, value in extractions.items():
+            items = extraction_items(value)
+            for item in items:
+                add(item, str(group))
+
+    seen: set[tuple[str, str, str]] = set()
+    unique: list[dict[str, Any]] = []
+    for command in commands:
+        key = (
+            str(command.get("command_id", "")),
+            str(command.get("command_type", "")),
+            str(command.get("raw_command", "")),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(command)
+        if len(unique) >= MAX_COMMANDS:
+            break
+    return unique
+
+
+def extraction_items(value: Any) -> list[dict[str, Any]]:
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, dict)]
+    if not isinstance(value, dict):
+        return []
+    for key in ("items", "results", "extractions"):
+        if isinstance(value.get(key), list):
+            return [item for item in value[key] if isinstance(item, dict)]
+    return []
+
+
+def compact_components(payload: dict[str, Any]) -> dict[str, Any]:
+    extractions = payload.get("extractions")
+    if not isinstance(extractions, dict):
+        return {}
+    compact: dict[str, Any] = {}
+    for group, value in extractions.items():
+        selected = []
+        for item in extraction_items(value)[:MAX_COMPONENTS_PER_GROUP]:
+            metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+            selected.append(
+                {
+                    "id": item.get("id") or item.get("component_id") or item.get("figure_id") or item.get("algorithm_id"),
+                    "type": item.get("type") or str(group).replace("_extractor", ""),
+                    "content": item.get("content"),
+                    "title": metadata.get("algorithm_name") or metadata.get("caption") or item.get("command_type") or item.get("role"),
+                    "description": item.get("description") or metadata.get("steps_summary") or metadata.get("key_insight") or item.get("context"),
+                    "latex": metadata.get("latex") or item.get("latex"),
+                    "raw_command": item.get("raw_command") or item.get("command"),
+                }
+            )
+        compact[str(group)] = selected
+    return compact
+
+
+def runbook_schema() -> dict[str, Any]:
+    step_schema = {
+        "type": "object",
+        "properties": {
+            "title": {"type": "string"},
+            "commands": {"type": "array", "items": {"type": "string"}},
+            "notes": {"type": "string"},
+            "source": {"type": "string"},
+        },
+        "required": ["title", "commands", "notes", "source"],
+        "additionalProperties": False,
+    }
+    return {
+        "type": "object",
+        "properties": {
+            "title": {"type": "string"},
+            "overview": {"type": "string"},
+            "source_confidence": {"type": "string", "enum": ["high", "medium", "low"]},
+            "environment": {
+                "type": "object",
+                "properties": {
+                    "package_manager": {"type": "string"},
+                    "python": {"type": "string"},
+                    "frameworks": {"type": "array", "items": {"type": "string"}},
+                    "hardware": {"type": "string"},
+                },
+                "required": ["package_manager", "python", "frameworks", "hardware"],
+                "additionalProperties": False,
+            },
+            "setup": {"type": "array", "items": step_schema},
+            "data_preparation": {"type": "array", "items": step_schema},
+            "reproduction_steps": {"type": "array", "items": step_schema},
+            "evaluation": {"type": "array", "items": step_schema},
+            "expected_outputs": {"type": "array", "items": {"type": "string"}},
+            "troubleshooting": {"type": "array", "items": step_schema},
+            "assumptions": {"type": "array", "items": {"type": "string"}},
+            "open_questions": {"type": "array", "items": {"type": "string"}},
+            "source_notes": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": [
+            "title",
+            "overview",
+            "source_confidence",
+            "environment",
+            "setup",
+            "data_preparation",
+            "reproduction_steps",
+            "evaluation",
+            "expected_outputs",
+            "troubleshooting",
+            "assumptions",
+            "open_questions",
+            "source_notes",
+        ],
+        "additionalProperties": False,
+    }
+
+
+def call_openai_runbook(
+    *,
+    api_key: str,
+    model: str,
+    source_context: dict[str, Any],
+    timeout: int,
+    max_retries: int,
+) -> dict[str, Any]:
+    system_prompt = (
+        "You are a senior reproducibility engineer for machine learning papers. "
+        "Create practical runbooks that a researcher can follow to reproduce a paper from a GitHub repository. "
+        "Use the README and requirements as the strongest evidence, then backend-extracted commands, then paper analysis. "
+        "Do not invent exact commands when the sources do not support them; write assumptions or open questions instead. "
+        "Return Korean prose, but keep shell commands, file names, package names, and paths exactly as they should be typed."
+    )
+    user_prompt = {
+        "task": "Create a reproduction runbook for the analyzed paper.",
+        "source_priority": [
+            "1. GitHub README.md or equivalent README file",
+            "2. GitHub requirements.txt / environment.yml / pyproject.toml",
+            "3. Backend-extracted command components",
+            "4. Paper2Run profile, components, and mappings",
+        ],
+        "requirements": [
+            "Prefer commands explicitly supported by README or extracted commands.",
+            "If data paths, checkpoints, or exact hyperparameters are missing, mark them as assumptions or open questions.",
+            "Include environment setup, dependency installation, data preparation, reproduction commands, evaluation, expected outputs, and troubleshooting.",
+            "Make the runbook actionable and ordered.",
+            "Mention which source supports each step.",
+        ],
+        "source_context": source_context,
+    }
+    body = {
+        "model": model,
+        "input": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": json.dumps(user_prompt, ensure_ascii=False)},
+        ],
+        "text": {
+            "format": {
+                "type": "json_schema",
+                "name": "paper_reproduction_runbook",
+                "strict": True,
+                "schema": runbook_schema(),
+            }
+        },
+    }
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    encoded = json.dumps(body).encode("utf-8")
+    last_error: Exception | None = None
+
+    for attempt in range(max_retries + 1):
+        request = Request(OPENAI_RESPONSES_URL, data=encoded, headers=headers, method="POST")
+        try:
+            with urlopen(request, timeout=timeout) as response:
+                raw = response.read().decode("utf-8")
+            return json.loads(extract_output_text(json.loads(raw)))
+        except HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            last_error = RuntimeError(f"OpenAI API HTTP {exc.code}: {detail}")
+        except (URLError, TimeoutError, json.JSONDecodeError, RuntimeError) as exc:
+            last_error = exc
+
+        if attempt < max_retries:
+            time.sleep(2**attempt)
+
+    raise RuntimeError(f"OpenAI runbook generation failed: {last_error}")
 
 
 class MappingService:
@@ -186,6 +451,77 @@ class MappingService:
         }
         return enriched
 
+    def runbook_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        repo_url = (
+            payload.get("github_repository", {}).get("url")
+            or payload.get("github_url")
+            or payload.get("repo_url")
+            or payload.get("repository_url")
+        )
+        if not repo_url:
+            raise ValueError("Missing github_repository.url.")
+
+        _, _, normalized_repo_url = parse_github_repo(str(repo_url))
+        repo_dir = ensure_repo(
+            normalized_repo_url,
+            self.args.repo_cache.expanduser().resolve(),
+            None,
+            self.args.ref,
+        )
+        commit = repo_commit(repo_dir)
+        readme = find_repo_file(
+            repo_dir,
+            ("README.md", "README.markdown", "README.rst", "README.txt", "README"),
+            MAX_README_CHARS,
+        )
+        requirements = find_repo_file(
+            repo_dir,
+            ("requirements.txt", "requirements-dev.txt", "environment.yml", "environment.yaml", "pyproject.toml"),
+            MAX_REQUIREMENTS_CHARS,
+        )
+        commands = collect_commands(payload)
+        source_context = {
+            "repository": {
+                "url": normalized_repo_url,
+                "commit": commit,
+            },
+            "paper": {
+                "filename": payload.get("filename") or payload.get("source_pdf") or "",
+                "title": payload.get("title") or payload.get("paper_title") or "",
+                "profile": payload.get("profile") or payload.get("profile_summary") or {},
+                "plan": payload.get("plan") or payload.get("plan_summary") or [],
+            },
+            "repo_files": {
+                "readme": readme,
+                "requirements": requirements,
+            },
+            "commands": commands,
+            "components": compact_components(payload),
+            "mappings": payload.get("mappings", [])[:24] if isinstance(payload.get("mappings"), list) else [],
+        }
+        runbook = call_openai_runbook(
+            api_key=self.api_key,
+            model=self.model,
+            source_context=source_context,
+            timeout=self.args.timeout,
+            max_retries=self.args.max_retries,
+        )
+        return {
+            "github_repository": {
+                **payload.get("github_repository", {}),
+                "url": normalized_repo_url,
+                "commit": commit,
+                "runbook_method": "openai_readme_requirements_command_reproduction_runbook",
+                "model": self.model,
+            },
+            "source_files": {
+                "readme": {key: value for key, value in readme.items() if key != "content"},
+                "requirements": {key: value for key, value in requirements.items() if key != "content"},
+            },
+            "commands_used": commands,
+            "runbook": runbook,
+        }
+
 
 def make_handler(service: MappingService, max_body_bytes: int) -> type[BaseHTTPRequestHandler]:
     class Handler(BaseHTTPRequestHandler):
@@ -206,6 +542,7 @@ def make_handler(service: MappingService, max_body_bytes: int) -> type[BaseHTTPR
                         "endpoints": {
                             "health": "/health",
                             "map": "/map",
+                            "runbook": "/runbook",
                         },
                     },
                 )
@@ -224,17 +561,21 @@ def make_handler(service: MappingService, max_body_bytes: int) -> type[BaseHTTPR
 
         def do_HEAD(self) -> None:  # noqa: N802
             path = urlparse(self.path).path
-            head_response(self, 200 if path in {"/", "/health"} else 404)
+            head_response(self, 200 if path in {"/", "/health", "/map", "/runbook"} else 404)
 
         def do_POST(self) -> None:  # noqa: N802
             path = urlparse(self.path).path
-            if path != "/map":
+            if path not in {"/map", "/runbook"}:
                 json_response(self, 404, {"error": "Not found"})
                 return
             try:
                 payload = read_json_body(self, max_body_bytes)
-                mapped = service.map_payload(payload)
-                json_response(self, 200, mapped)
+                if path == "/map":
+                    mapped = service.map_payload(payload)
+                    json_response(self, 200, mapped)
+                    return
+                runbook = service.runbook_payload(payload)
+                json_response(self, 200, runbook)
             except Exception as exc:  # pylint: disable=broad-except
                 json_response(self, 500, {"error": str(exc)})
 
@@ -267,6 +608,7 @@ def main(argv: list[str]) -> int:
     service = MappingService(args)
     server = ThreadingHTTPServer((args.host, args.port), make_handler(service, args.max_body_bytes))
     print(f"Mapping API running at http://{args.host}:{args.port}/map")
+    print(f"Runbook API running at http://{args.host}:{args.port}/runbook")
     print(f"Using OpenAI model: {service.model}")
     try:
         server.serve_forever()

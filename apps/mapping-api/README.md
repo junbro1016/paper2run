@@ -7,9 +7,12 @@ It exposes:
 ```text
 GET  /health
 POST /map
+POST /runbook
 ```
 
 `POST /map` receives extracted Paper2Run JSON plus `github_repository.url`, then returns the same JSON enriched with `code_locations`.
+
+`POST /runbook` receives a full Paper2Run result plus `github_repository.url`, reads the repository README and requirements files, combines them with extracted command components, and returns an OpenAI-generated reproduction runbook.
 
 ## Local Run
 
@@ -22,6 +25,7 @@ Default local endpoint:
 
 ```text
 http://127.0.0.1:8787/map
+http://127.0.0.1:8787/runbook
 ```
 
 ## Deployment
@@ -57,6 +61,54 @@ https://paper2run-nevv.onrender.com/map
   },
   "equations": [],
   "figures": []
+}
+```
+
+## Runbook Request Shape
+
+```json
+{
+  "filename": "Transformer.pdf",
+  "github_repository": {
+    "url": "https://github.com/tensorflow/tensor2tensor"
+  },
+  "profile": {},
+  "extractions": {
+    "command_extractor": {
+      "items": []
+    }
+  },
+  "mappings": []
+}
+```
+
+## Runbook Response Shape
+
+```json
+{
+  "github_repository": {
+    "url": "https://github.com/tensorflow/tensor2tensor",
+    "commit": "...",
+    "runbook_method": "openai_readme_requirements_command_reproduction_runbook",
+    "model": "..."
+  },
+  "source_files": {
+    "readme": {
+      "found": true,
+      "path": "README.md"
+    },
+    "requirements": {
+      "found": true,
+      "path": "requirements.txt"
+    }
+  },
+  "commands_used": [],
+  "runbook": {
+    "title": "...",
+    "overview": "...",
+    "setup": [],
+    "reproduction_steps": []
+  }
 }
 ```
 
