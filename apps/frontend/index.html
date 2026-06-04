@@ -97,7 +97,6 @@
     <main class="thread" aria-label="Analysis thread">
       <!-- Request bubble -->
       <section class="thread-turn is-request">
-        <div class="turn-avatar is-user">YOU</div>
         <div class="turn-bubble request-card">
           <div class="request-row">
             <span class="request-icon" aria-hidden="true">📄</span>
@@ -115,7 +114,6 @@
 
       <!-- Response bubble -->
       <section class="thread-turn is-response">
-        <div class="turn-avatar is-agent">P4</div>
         <div class="turn-bubble response-card">
           <!-- ---- PROCESSING ---- -->
           <div class="response-processing">
@@ -126,6 +124,15 @@
 
             <h3 class="proc-heading" id="procHeading">Grounding your paper…</h3>
             <p class="proc-sub" id="procStatus">Reading the paper and mapping its claims to your repository.</p>
+
+            <div class="process-panel" aria-live="polite">
+              <div>
+                <span class="section-label">Current process</span>
+                <strong id="procAgent">Profiler agent</strong>
+              </div>
+              <p id="procDetail">Reading the paper structure and building the initial profile.</p>
+              <div id="procSteps" class="process-steps" aria-label="Pipeline steps"></div>
+            </div>
 
             <div class="proc-shimmer" aria-hidden="true">
               <span></span>

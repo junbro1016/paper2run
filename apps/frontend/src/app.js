@@ -50,6 +50,9 @@ const elements = {
   threadRepo: document.querySelector("#threadRepo"),
   procHeading: document.querySelector("#procHeading"),
   procStatus: document.querySelector("#procStatus"),
+  procAgent: document.querySelector("#procAgent"),
+  procDetail: document.querySelector("#procDetail"),
+  procSteps: document.querySelector("#procSteps"),
   procBackBtn: document.querySelector("#procBackBtn"),
   runForm: document.querySelector("#runForm"),
   pdfInput: document.querySelector("#pdfInput"),
@@ -89,6 +92,34 @@ const STEP_CAPTIONS = [
   "Mapping each claim to your repository code.",
   "Scoring and verifying the evidence.",
   "Finalizing the evidence report.",
+];
+
+const PROCESS_STEPS = [
+  {
+    agent: "Profiler agent",
+    label: "Profile",
+    detail: "Reading the paper structure, sections, and difficulty signals.",
+  },
+  {
+    agent: "Extractor agents",
+    label: "Extract",
+    detail: "Extracting equations, figures, algorithms, and command candidates.",
+  },
+  {
+    agent: "Grounding agent",
+    label: "Ground",
+    detail: "Matching extracted paper components to implementation evidence in the GitHub repository.",
+  },
+  {
+    agent: "Verifier agent",
+    label: "Verify",
+    detail: "Checking mapping quality, confidence, and weak or missing evidence.",
+  },
+  {
+    agent: "Finalizer",
+    label: "Finalize",
+    detail: "Assembling the final result view and preparing the evidence report.",
+  },
 ];
 
 elements.repoUrl.value = state.repoUrl;
@@ -687,6 +718,7 @@ function renderThreadRequest() {
 function renderProcessing() {
   const job = state.job;
   const stageIndex = currentStageIndex();
+  const process = currentProcessInfo(stageIndex);
   const isError = job?.status === "error";
 
   if (elements.procHeading) {
@@ -702,6 +734,44 @@ function renderProcessing() {
       : STEP_CAPTIONS[Math.min(stageIndex, STEP_CAPTIONS.length - 1)];
     elements.procStatus.classList.toggle("is-error", Boolean(isError));
   }
+
+  if (elements.procAgent) {
+    elements.procAgent.textContent = isError ? "Error" : process.agent;
+  }
+
+  if (elements.procDetail) {
+    elements.procDetail.textContent = isError
+      ? job.error || "The pipeline stopped before producing a result."
+      : process.detail;
+  }
+
+  if (elements.procSteps) {
+    elements.procSteps.innerHTML = PROCESS_STEPS.map((step, index) => {
+      const stateName = index < stageIndex ? "done" : index === stageIndex ? "active" : "pending";
+      return `
+        <span class="process-step" data-state="${escapeAttribute(stateName)}">
+          <i aria-hidden="true"></i>
+          ${escapeHtml(step.label)}
+        </span>
+      `;
+    }).join("");
+  }
+}
+
+function currentProcessInfo(stageIndex) {
+  const index = Math.max(0, Math.min(PROCESS_STEPS.length - 1, stageIndex));
+  const step = PROCESS_STEPS[index];
+  const job = state.job || {};
+  const runtime = Array.isArray(job.runtime_log) ? job.runtime_log.at(-1) : null;
+  const runtimeName = runtime?.agent || runtime?.stage || runtime?.name || runtime?.node;
+  if (runtimeName) {
+    return {
+      ...step,
+      agent: runtimeName,
+      detail: runtime.summary || runtime.message || runtime.status || step.detail,
+    };
+  }
+  return step;
 }
 
 function render() {

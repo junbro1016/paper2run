@@ -553,13 +553,13 @@ body[data-stage="result"] .response-result {
 
 .thread-turn {
   display: grid;
-  grid-template-columns: 38px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
   align-items: start;
 }
 
 .turn-avatar {
-  display: grid;
+  display: none;
   place-items: center;
   width: 38px;
   height: 38px;
@@ -649,12 +649,25 @@ body[data-stage="result"] .response-result {
 }
 
 .proc-badge {
+  display: inline-flex;
+  align-items: center;
   gap: 9px;
+  width: fit-content;
+  min-height: 32px;
+  padding: 6px 12px;
+  border: 1px solid var(--glass-line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .proc-badge .proc-spin {
+  display: inline-block;
   width: 13px;
   height: 13px;
+  flex: none;
   border-radius: 999px;
   border: 2px solid rgba(52, 230, 168, 0.3);
   border-top-color: var(--accent);
@@ -683,6 +696,82 @@ body[data-stage="result"] .response-result {
 
 .proc-sub.is-error {
   color: var(--red);
+}
+
+.process-panel {
+  display: grid;
+  gap: 12px;
+  margin-top: 10px;
+  padding: 16px;
+  border: 1px solid var(--glass-line);
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 0% 0%, rgba(52, 230, 168, 0.1), transparent 42%),
+    rgba(255, 255, 255, 0.025);
+}
+
+.process-panel > div:first-child {
+  display: grid;
+  gap: 5px;
+}
+
+.process-panel strong {
+  font-size: 18px;
+  letter-spacing: -0.01em;
+}
+
+.process-panel p {
+  margin: 0;
+  max-width: 78ch;
+  color: var(--ink-soft);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.process-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.process-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 30px;
+  padding: 0 11px;
+  border: 1px solid var(--glass-line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.process-step i {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--faint);
+}
+
+.process-step[data-state="done"] {
+  border-color: rgba(52, 230, 168, 0.24);
+  color: var(--ink-soft);
+}
+
+.process-step[data-state="done"] i {
+  background: var(--accent);
+}
+
+.process-step[data-state="active"] {
+  border-color: rgba(52, 230, 168, 0.5);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.process-step[data-state="active"] i {
+  background: var(--accent);
+  box-shadow: 0 0 0 5px rgba(52, 230, 168, 0.12);
 }
 
 /* Calm shimmer skeleton — implies work without faking progress. */
