@@ -291,10 +291,11 @@ def call_openai_runbook(
 ) -> dict[str, Any]:
     system_prompt = (
         "You are a senior reproducibility engineer for machine learning papers. "
-        "Create practical runbooks that a researcher can follow to reproduce a paper from a GitHub repository. "
+        "Create concise, practical runbooks that a researcher can follow to reproduce a paper from a GitHub repository. "
         "Use the README and requirements as the strongest evidence, then backend-extracted commands, then paper analysis. "
         "Do not invent exact commands when the sources do not support them; write assumptions or open questions instead. "
-        "Return Korean prose, but keep shell commands, file names, package names, and paths exactly as they should be typed."
+        "Write in clear English. Keep the guide short, direct, and action-oriented. "
+        "Keep shell commands, file names, package names, and paths exactly as they should be typed."
     )
     user_prompt = {
         "task": "Create a reproduction runbook for the analyzed paper.",
@@ -307,9 +308,13 @@ def call_openai_runbook(
         "requirements": [
             "Prefer commands explicitly supported by README or extracted commands.",
             "If data paths, checkpoints, or exact hyperparameters are missing, mark them as assumptions or open questions.",
-            "Include environment setup, dependency installation, data preparation, reproduction commands, evaluation, expected outputs, and troubleshooting.",
-            "Make the runbook actionable and ordered.",
-            "Mention which source supports each step.",
+            "Include only the steps needed to get from a fresh clone to a reproduced result.",
+            "Use imperative titles such as 'Clone the repository', 'Install dependencies', and 'Run evaluation'.",
+            "Keep overview under 80 words.",
+            "Keep each step note to one or two short sentences.",
+            "Limit setup, data_preparation, reproduction_steps, evaluation, and troubleshooting to the most important items.",
+            "Put commands in commands arrays only when the source supports them.",
+            "Mention which source supports each step, using compact labels like README, requirements.txt, extracted command, or assumption.",
         ],
         "source_context": source_context,
     }
