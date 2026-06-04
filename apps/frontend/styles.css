@@ -259,6 +259,7 @@ body[data-stage="result"] .response-result {
   font-weight: 600;
   line-height: 1.04;
   letter-spacing: -0.02em;
+  text-wrap: balance;
   background: linear-gradient(180deg, #ffffff, #b9c8c5);
   -webkit-background-clip: text;
   background-clip: text;
@@ -271,6 +272,7 @@ body[data-stage="result"] .response-result {
   color: var(--muted);
   font-size: clamp(15px, 1.6vw, 17px);
   line-height: 1.6;
+  text-wrap: balance;
 }
 
 /* ---- Composer ---- */
