@@ -25,18 +25,19 @@
 
     <header class="topbar" aria-label="Primary navigation">
       <button id="brandHome" class="topbar-brand" type="button">
-        <span class="brand-glyph">P4</span>
+        <span class="brand-glyph"><img src="./logo.png" alt="" /></span>
         <span class="brand-word">Paper2Run</span>
       </button>
     </header>
 
     <!-- ============ LANDING ============ -->
     <section class="landing" aria-label="Start a pipeline run">
-      <span class="hero-badge"><b>New</b> ✦ Paper2Run Terminal</span>
-      <h1 class="hero-title">What paper should we ground today?</h1>
+      <img class="hero-logo" src="./logo.png" alt="Paper2Run" />
+      <h1 class="hero-title">Deep dive into any research paper</h1>
       <p class="hero-sub">
-        Extract equations and figures, map every claim to real code, and review the
-        evidence — async, end to end.
+        Upload a PDF and connect its GitHub repository.<br />
+        Paper2Run extracts equations, figures, and algorithms,<br />
+        then grounds them in real code and builds a reproducibility view.
       </p>
 
       <form id="runForm" class="composer">
@@ -80,27 +81,16 @@
 
             <label class="composer-chip upload-json" for="jsonInput">⤓ Load Result JSON</label>
             <input id="jsonInput" class="visually-hidden" type="file" accept="application/json" />
-
-            <button id="clearBtn" class="composer-chip" type="button">Clear</button>
           </div>
 
-          <button id="runBtn" class="composer-run" type="submit" aria-label="Run pipeline">
-            <span aria-hidden="true">↑</span>
-          </button>
+          <div class="composer-actions">
+            <button id="clearBtn" class="composer-clear" type="button">Clear</button>
+            <button id="runBtn" class="composer-run" type="submit" aria-label="Run pipeline">
+              <span aria-hidden="true">↑</span>
+            </button>
+          </div>
         </div>
       </form>
-
-      <div class="suggestions" aria-label="Example runs">
-        <button class="suggestion" type="button" data-repo="https://github.com/tensorflow/tensor2tensor">
-          Attention Is All You Need · tensor2tensor
-        </button>
-        <button class="suggestion" type="button" data-repo="https://github.com/hojonathanho/diffusion">
-          Denoising Diffusion · hojonathanho
-        </button>
-        <button class="suggestion" type="button" data-repo="">
-          Map equations &amp; figures to code
-        </button>
-      </div>
     </section>
 
     <!-- ============ THREAD (processing + result) ============ -->

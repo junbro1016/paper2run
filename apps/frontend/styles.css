@@ -162,6 +162,7 @@ a {
   place-items: center;
   width: 32px;
   height: 32px;
+  overflow: hidden;
   border-radius: 9px;
   background: linear-gradient(150deg, #4cf0b6, var(--accent-strong));
   color: #04140d;
@@ -169,6 +170,12 @@ a {
   font-size: 13px;
   font-weight: 900;
   box-shadow: 0 8px 22px rgba(52, 230, 168, 0.35);
+}
+
+.brand-glyph img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 /* ============ STAGE TOGGLE ============ */
@@ -237,32 +244,18 @@ body[data-stage="result"] .response-result {
   text-align: center;
 }
 
-.hero-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  padding: 7px 16px;
-  border: 1px solid var(--glass-line);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--ink-soft);
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.hero-badge b {
-  font-size: 11px;
-  font-weight: 800;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--surface-2);
-  color: var(--muted);
+.hero-logo {
+  width: clamp(58px, 7vw, 82px);
+  height: clamp(58px, 7vw, 82px);
+  object-fit: cover;
+  border-radius: 18px;
+  box-shadow: 0 18px 42px rgba(52, 230, 168, 0.24);
 }
 
 .hero-title {
   margin: 0;
-  max-width: 760px;
-  font-size: clamp(40px, 6vw, 68px);
+  max-width: 800px;
+  font-size: clamp(38px, 5.4vw, 64px);
   font-weight: 600;
   line-height: 1.04;
   letter-spacing: -0.02em;
@@ -274,7 +267,7 @@ body[data-stage="result"] .response-result {
 
 .hero-sub {
   margin: 0;
-  max-width: 560px;
+  max-width: 660px;
   color: var(--muted);
   font-size: clamp(15px, 1.6vw, 17px);
   line-height: 1.6;
@@ -410,6 +403,27 @@ body[data-stage="result"] .response-result {
   height: 8px;
   border-radius: 999px;
   background: var(--accent);
+}
+
+.composer-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+.composer-clear {
+  min-height: 46px;
+  padding: 0 16px;
+  border-radius: 14px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.composer-clear:hover {
+  border-color: var(--glass-line-strong);
+  background: var(--surface-2);
 }
 
 .composer-run {
@@ -2029,9 +2043,18 @@ body[data-stage="result"] .response-result {
     align-items: stretch;
   }
 
-  .composer-run {
+  .composer-actions {
     width: 100%;
+    justify-content: stretch;
+  }
+
+  .composer-clear,
+  .composer-run {
     height: 46px;
+  }
+
+  .composer-clear {
+    flex: 1;
   }
 
   .thread-turn {

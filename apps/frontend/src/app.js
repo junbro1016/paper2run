@@ -1,6 +1,7 @@
 const DEFAULT_API_BASE_URL = "https://paper2run.onrender.com";
 const DEFAULT_RUNBOOK_API_URL = "https://paper2run-nevv.onrender.com/runbook";
 const LEGACY_API_BASE_URLS = new Set(["https://paper2run-production.up.railway.app"]);
+const LEGACY_DEFAULT_REPO_URLS = new Set(["https://github.com/tensorflow/tensor2tensor"]);
 const SETTINGS_STORAGE_KEY = "paper2run.pipeline.frontend.settings";
 const JOB_STORAGE_KEY = "paper2run.pipeline.frontend.lastJob";
 const POLL_INITIAL_INTERVAL_MS = 5000;
@@ -20,7 +21,7 @@ const savedSettings = loadSavedSettings();
 
 const state = {
   file: null,
-  repoUrl: savedSettings.repoUrl || "",
+  repoUrl: normalizeRepoUrl(savedSettings.repoUrl),
   apiBaseUrl: normalizeApiBaseUrl(savedSettings.apiBaseUrl),
   job: null,
   result: null,
@@ -56,6 +57,7 @@ const elements = {
   fileMeta: document.querySelector("#fileMeta"),
   repoUrl: document.querySelector("#repoUrl"),
   apiBaseUrl: document.querySelector("#apiBaseUrl"),
+  advancedSettings: document.querySelector("#advancedSettings"),
   healthBtn: document.querySelector("#healthBtn"),
   apiHealth: document.querySelector("#apiHealth"),
   runBtn: document.querySelector("#runBtn"),
@@ -117,6 +119,12 @@ function wireEvents() {
   elements.apiBaseUrl.addEventListener("input", () => {
     state.apiBaseUrl = elements.apiBaseUrl.value.trim();
     saveSettings();
+  });
+
+  document.addEventListener("click", (event) => {
+    if (!elements.advancedSettings?.open) return;
+    if (elements.advancedSettings.contains(event.target)) return;
+    elements.advancedSettings.open = false;
   });
 
   elements.healthBtn.addEventListener("click", () => checkHealth());
@@ -207,6 +215,14 @@ function normalizeApiBaseUrl(value) {
   const normalized = String(value || "").replace(/\/$/, "");
   if (!normalized || LEGACY_API_BASE_URLS.has(normalized)) {
     return DEFAULT_API_BASE_URL;
+  }
+  return normalized;
+}
+
+function normalizeRepoUrl(value) {
+  const normalized = String(value || "").trim().replace(/\/$/, "");
+  if (!normalized || LEGACY_DEFAULT_REPO_URLS.has(normalized)) {
+    return "";
   }
   return normalized;
 }
