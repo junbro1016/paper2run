@@ -1663,7 +1663,7 @@ function renderRunbook() {
         <p>${escapeHtml(runbook.overview || "")}</p>
       </div>
       <div class="runbook-source-grid">
-        ${runbookSourcePill("Repository", repo.url || resolvedGithubUrl() || "unknown")}
+        ${runbookSourcePill("Repository", repo.url || resolvedGithubUrl() || "unknown", repo.url || resolvedGithubUrl())}
         ${runbookSourcePill("README", sourceFiles.readme?.found ? sourceFiles.readme.path : "not found")}
         ${runbookSourcePill(
           "Requirements",
@@ -1732,9 +1732,13 @@ function renderRunbookStep(step, index) {
         ${
           commands.length
             ? commands
-                .map((command) => `
+                .map((command, commandIndex) => `
                   <div class="code-card">
-                    <div class="code-card-head"><span class="code-spacer"></span><button class="code-copy" type="button">Copy</button></div>
+                    <div class="code-card-head">
+                      <span class="code-command-label">command ${escapeHtml(index + 1)}-${escapeHtml(commandIndex + 1)}</span>
+                      <span class="code-spacer"></span>
+                      <button class="code-copy" type="button">Copy</button>
+                    </div>
                     <pre class="code-body"><code data-raw="${escapeAttribute(command)}">${escapeHtml(command)}</code></pre>
                   </div>
                 `)
@@ -1759,11 +1763,24 @@ function renderRunbookList(title, values) {
   `;
 }
 
-function runbookSourcePill(label, value) {
-  return `
-    <span class="metric-pill runbook-source-pill">
+function runbookSourcePill(label, value, href = "") {
+  const link = /^https?:\/\//i.test(String(href || ""))
+    ? String(href).replace(/\/$/, "").replace(/\.git$/, "")
+    : "";
+  const content = `
       <small>${escapeHtml(label)}</small>
       <strong>${escapeHtml(value)}</strong>
+  `;
+  if (link) {
+    return `
+      <a class="metric-pill runbook-source-pill is-link" href="${escapeAttribute(link)}" target="_blank" rel="noopener noreferrer" title="${escapeAttribute(value)}">
+        ${content}
+      </a>
+    `;
+  }
+  return `
+    <span class="metric-pill runbook-source-pill">
+      ${content}
     </span>
   `;
 }

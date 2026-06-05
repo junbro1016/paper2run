@@ -1097,10 +1097,30 @@ body[data-stage="result"] .response-result {
 
 .runbook-source-pill {
   width: 100%;
+  min-width: 0;
 }
 
 .runbook-source-pill strong {
-  overflow-wrap: anywhere;
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.runbook-source-pill.is-link {
+  color: inherit;
+  text-decoration: none;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    transform 160ms ease;
+}
+
+.runbook-source-pill.is-link:hover {
+  border-color: rgba(76, 240, 182, 0.42);
+  background: rgba(76, 240, 182, 0.09);
+  transform: translateY(-1px);
 }
 
 .runbook-section {
@@ -1117,6 +1137,25 @@ body[data-stage="result"] .response-result {
   border-radius: 14px;
   padding: 14px;
   background: rgba(255, 255, 255, 0.03);
+}
+
+.runbook-step > .rank-badge {
+  display: flex;
+  align-self: stretch;
+  align-items: flex-start;
+  justify-content: center;
+  width: 34px;
+  padding: 11px 0 0;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0)),
+    linear-gradient(180deg, rgba(76, 240, 182, 0.11), rgba(255, 255, 255, 0.04));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -14px 22px rgba(0, 0, 0, 0.22),
+    0 10px 24px rgba(0, 0, 0, 0.18);
+  color: var(--ink-soft);
 }
 
 .runbook-step h4 {
@@ -1471,6 +1510,14 @@ body[data-stage="result"] .response-result {
   font-family: var(--mono);
   font-weight: 700;
   color: var(--ink);
+}
+
+.code-command-label {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: var(--muted);
 }
 
 .code-lines,
