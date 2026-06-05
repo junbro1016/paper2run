@@ -101,7 +101,6 @@ const elements = {
   askStatus: document.querySelector("#askStatus"),
   askSuggestions: document.querySelector("#askSuggestions"),
   askAttachment: document.querySelector("#askAttachment"),
-  askContextChip: document.querySelector("#askContextChip"),
 };
 
 // Calm, honest status copy keyed to the inferred step — no fake counters.
@@ -639,13 +638,37 @@ async function fetchFullResult(jobId) {
   render();
   await delay(550);
 
-  state.result = result;
-  state.runbook = result.runbook || null;
-  state.runbookMeta = result.runbook_meta || null;
-  state.runbookError = "";
+  let finalResult = result;
+  let runbook = result.runbook || null;
+  let runbookMeta = result.runbook_meta || null;
+  let runbookError = "";
+  if (!runbook) {
+    state.runbookBusy = true;
+    addStatus("Generating reproduction runbook", "pending");
+    render();
+    try {
+      const payload = await requestRunbook(result);
+      runbook = payload.runbook || payload;
+      runbookMeta = runbookMetaFromPayload(payload);
+      finalResult = {
+        ...result,
+        runbook,
+        runbook_meta: runbookMeta,
+      };
+      addStatus("Runbook generated", "done");
+    } catch (error) {
+      runbookError = error.message;
+      addStatus(error.message, "error");
+    }
+  }
+
+  state.result = finalResult;
+  state.runbook = runbook;
+  state.runbookMeta = runbookMeta;
+  state.runbookError = runbookError;
   state.runbookBusy = false;
   resetAskState();
-  saveJobSnapshot({ ...result, status: "done" });
+  saveJobSnapshot({ ...finalResult, status: "done" });
   state.activeTab = "overview";
   addStatus("Result loaded", "done");
   render();
@@ -662,22 +685,10 @@ async function generateRunbook({ force = false } = {}) {
 
   try {
     addStatus("Generating reproduction runbook", "pending");
-    const response = await fetchWithRetry(DEFAULT_RUNBOOK_API_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(buildRunbookPayload()),
-    });
-    const payload = await readJsonResponse(response);
-    if (!response.ok) {
-      throw new Error(errorMessage(payload, `Runbook generation failed with HTTP ${response.status}`));
-    }
+    const payload = await requestRunbook(state.result);
 
     state.runbook = payload.runbook || payload;
-    state.runbookMeta = {
-      github_repository: payload.github_repository,
-      source_files: payload.source_files,
-      commands_used: payload.commands_used,
-    };
+    state.runbookMeta = runbookMetaFromPayload(payload);
     state.result = {
       ...state.result,
       runbook: state.runbook,
@@ -694,13 +705,34 @@ async function generateRunbook({ force = false } = {}) {
   }
 }
 
-function buildRunbookPayload() {
-  const githubUrl = resolvedGithubUrl();
+async function requestRunbook(result) {
+  const response = await fetchWithRetry(DEFAULT_RUNBOOK_API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(buildRunbookPayload(result)),
+  });
+  const payload = await readJsonResponse(response);
+  if (!response.ok) {
+    throw new Error(errorMessage(payload, `Runbook generation failed with HTTP ${response.status}`));
+  }
+  return payload;
+}
+
+function runbookMetaFromPayload(payload) {
   return {
-    ...state.result,
+    github_repository: payload.github_repository,
+    source_files: payload.source_files,
+    commands_used: payload.commands_used,
+  };
+}
+
+function buildRunbookPayload(result = state.result) {
+  const githubUrl = resolvedGithubUrl(result);
+  return {
+    ...result,
     github_url: githubUrl,
     github_repository: {
-      ...(state.result.github_repository || {}),
+      ...(result?.github_repository || {}),
       url: githubUrl,
     },
   };
@@ -1901,9 +1933,6 @@ async function sendAskMessage(rawQuestion) {
 function renderAskPanel() {
   if (!elements.askMessages) return;
   const selected = state.ask.selectedContext;
-  const contextLabel = selected?.title || (state.result ? "Result context" : "No result yet");
-  elements.askContextChip.textContent = contextLabel.length > 34 ? `${contextLabel.slice(0, 31)}...` : contextLabel;
-  elements.askContextChip.title = contextLabel;
   elements.askStatus.textContent = state.ask.error || (state.ask.busy ? "Asking OpenAI with the selected JSON context..." : "");
   elements.askSuggestions.innerHTML = ASK_SUGGESTIONS.map(
     (suggestion) => `
@@ -2497,10 +2526,10 @@ function buildGithubLineUrl(repoUrl, file, lineStart, lineEnd) {
   return `${normalized}/blob/HEAD/${file}${line}`;
 }
 
-function resolvedGithubUrl() {
+function resolvedGithubUrl(result = state.result) {
   return (
-    state.result?.github_repository?.url ||
-    state.result?.github_url ||
+    result?.github_repository?.url ||
+    result?.github_url ||
     state.job?.github_url ||
     state.repoUrl ||
     ""
