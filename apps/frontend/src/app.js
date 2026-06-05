@@ -97,6 +97,7 @@ const elements = {
   askSendBtn: document.querySelector("#askSendBtn"),
   askStatus: document.querySelector("#askStatus"),
   askSuggestions: document.querySelector("#askSuggestions"),
+  askAttachment: document.querySelector("#askAttachment"),
   askContextChip: document.querySelector("#askContextChip"),
 };
 
@@ -208,6 +209,15 @@ function wireEvents() {
     const button = event.target.closest("[data-suggestion]");
     if (!button) return;
     sendAskMessage(button.dataset.suggestion || button.textContent || "");
+  });
+
+  elements.askAttachment?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-clear-ask-context]");
+    if (!button) return;
+    state.ask.selectedContext = null;
+    state.ask.error = "";
+    renderAskPanel();
+    elements.askInput?.focus();
   });
 
   document.querySelector(".response-result")?.addEventListener("click", (event) => {
@@ -1726,6 +1736,7 @@ function renderAskPanel() {
       </button>
     `,
   ).join("");
+  elements.askAttachment.innerHTML = renderAskAttachment(selected);
 
   const messages = state.ask.messages.length
     ? state.ask.messages
@@ -1756,6 +1767,27 @@ function renderAskMessage(message) {
         <div>${formatAskContent(message.content)}</div>
         ${message.contextTitle ? `<small>Context: ${escapeHtml(message.contextTitle)}</small>` : ""}
       </div>
+    </div>
+  `;
+}
+
+function renderAskAttachment(selected) {
+  if (!selected) {
+    return `
+      <div class="ask-attachment-card is-default">
+        <span class="attachment-label">Context</span>
+        <span class="attachment-title">Full pipeline result</span>
+      </div>
+    `;
+  }
+  return `
+    <div class="ask-attachment-card">
+      <div class="attachment-main">
+        <span class="attachment-label">Attached context</span>
+        <span class="attachment-title">${escapeHtml(selected.title || "Selected component")}</span>
+      </div>
+      <span class="attachment-kind">${escapeHtml(formatAskKind(selected.kind))}</span>
+      <button class="attachment-clear" type="button" data-clear-ask-context>Clear</button>
     </div>
   `;
 }
