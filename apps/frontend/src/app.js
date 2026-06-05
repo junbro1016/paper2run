@@ -13,7 +13,7 @@ const POLL_LATER_INTERVAL_MS = 12000;
 const POLL_FAST_WINDOW_MS = 60000;
 const FETCH_TIMEOUT_MS = 30000;
 const MAX_TRANSIENT_FETCH_RETRIES = 5;
-const MIN_PROCESS_STEP_MS = 2400;
+const MIN_PROCESS_STEP_MS = 3000;
 const PROCESS_RENDER_INTERVAL_MS = 500;
 
 const PIPELINE_STEPS = ["Profile", "Extract", "Ground", "Verify", "Finalize"];
@@ -1076,9 +1076,7 @@ function currentBackendStageIndex() {
 }
 
 function currentStageIndex() {
-  const backendStage = currentBackendStageIndex();
-  const elapsedStage = elapsedProcessStageIndex();
-  return Math.min(backendStage, elapsedStage);
+  return elapsedProcessStageIndex();
 }
 
 function renderThreadRequest() {
@@ -1145,7 +1143,7 @@ function currentProcessInfo(stageIndex) {
   const job = state.job || {};
   const runtime = Array.isArray(job.runtime_log) ? job.runtime_log.at(-1) : null;
   const runtimeName = runtime?.agent || runtime?.stage || runtime?.name || runtime?.node;
-  if (runtimeName && currentBackendStageIndex() <= index) {
+  if (runtimeName && currentBackendStageIndex() === index) {
     return {
       ...step,
       agent: runtimeName,
