@@ -1203,10 +1203,80 @@ function figureVisual(item, caption) {
 }
 
 /* ---- Figure preview: crop the figure region out of the uploaded PDF ---- */
-function figureBox(item) {
+function figureBoxes(item) {
   const metadata = normalizedMetadata(item);
-  const bbox = metadata.page_bbox || item.page_bbox;
-  return Array.isArray(bbox) && bbox.length >= 4 ? bbox.map(Number) : null;
+  const directKeys = [
+    "crop_bbox",
+    "page_bbox",
+    "image_bbox",
+    "figure_bbox",
+    "bbox",
+    "figure_body_bbox",
+  ];
+  const boxes = [];
+  const bodyBox = parseFigureBox(metadata.figure_body_bbox || item.figure_body_bbox);
+  const captionBox = parseFigureBox(metadata.caption_bbox || item.caption_bbox);
+  const unionBox = unionFigureBoxes([bodyBox, captionBox].filter(Boolean));
+  if (unionBox) boxes.push(unionBox);
+
+  for (const key of directKeys) {
+    const box = parseFigureBox(metadata[key] || item[key]);
+    if (box) boxes.push(box);
+  }
+
+  const seen = new Set();
+  return boxes.filter((box) => {
+    const key = box.map((value) => value.toFixed(4)).join(",");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function parseFigureBox(value) {
+  if (!value) return null;
+  if (Array.isArray(value)) {
+    const numbers = value.slice(0, 4).map(Number);
+    return numbers.every(Number.isFinite) ? orderFigureBox(numbers) : null;
+  }
+  if (typeof value !== "object") return null;
+  if (Array.isArray(value.bbox)) return parseFigureBox(value.bbox);
+  const keys = [
+    ["x0", "y0", "x1", "y1"],
+    ["left", "top", "right", "bottom"],
+    ["l", "t", "r", "b"],
+  ];
+  for (const [x0Key, y0Key, x1Key, y1Key] of keys) {
+    if ([x0Key, y0Key, x1Key, y1Key].every((key) => value[key] != null)) {
+      const numbers = [value[x0Key], value[y0Key], value[x1Key], value[y1Key]].map(Number);
+      return numbers.every(Number.isFinite) ? orderFigureBox(numbers) : null;
+    }
+  }
+  if (value.x != null && value.y != null && (value.width != null || value.w != null) && (value.height != null || value.h != null)) {
+    const x = Number(value.x);
+    const y = Number(value.y);
+    const width = Number(value.width ?? value.w);
+    const height = Number(value.height ?? value.h);
+    if ([x, y, width, height].every(Number.isFinite)) {
+      return orderFigureBox([x, y, x + width, y + height]);
+    }
+  }
+  return null;
+}
+
+function orderFigureBox([x0, y0, x1, y1]) {
+  return [Math.min(x0, x1), Math.min(y0, y1), Math.max(x0, x1), Math.max(y0, y1)];
+}
+
+function unionFigureBoxes(boxes) {
+  const valid = boxes.filter(Boolean);
+  if (!valid.length) return null;
+  return [
+    Math.min(...valid.map((box) => box[0])),
+    Math.min(...valid.map((box) => box[1])),
+    Math.max(...valid.map((box) => box[2])),
+    Math.max(...valid.map((box) => box[3])),
+  ];
 }
 
 function figurePageNumber(item) {
@@ -1217,7 +1287,7 @@ function figurePageNumber(item) {
 }
 
 function hasFigureBox(item) {
-  return Boolean(figureBox(item) && figurePageNumber(item));
+  return Boolean(figureBoxes(item).length && figurePageNumber(item));
 }
 
 function getPaperPdfFile() {
@@ -1263,7 +1333,11 @@ async function getPdfDoc() {
     paperPdf.docPromise = (async () => {
       const lib = await loadPdfjs();
       const data = await file.arrayBuffer();
-      return lib.getDocument({ data }).promise;
+      try {
+        return await lib.getDocument({ data: data.slice(0) }).promise;
+      } catch (error) {
+        return lib.getDocument({ data, disableWorker: true }).promise;
+      }
     })();
   }
   return paperPdf.docPromise;
@@ -1276,23 +1350,25 @@ async function ensureFigureCrops() {
   for (const figure of figures) {
     const id = figure.id;
     if (!id || figureImageUrl(figure) || figureCropCache.has(id)) continue;
-    if (!hasFigureBox(figure)) {
+    const boxes = figureBoxes(figure);
+    if (!boxes.length || !figurePageNumber(figure)) {
       figureCropCache.set(id, null);
       continue;
     }
     try {
       doc = doc || (await getPdfDoc());
       if (!doc) return;
-      const url = await cropFigure(doc, figurePageNumber(figure), figureBox(figure));
+      const url = await cropFigure(doc, figurePageNumber(figure), boxes);
       figureCropCache.set(id, url || null);
       if (url) applyFigureCrop(id, url);
-    } catch {
+    } catch (error) {
+      console.warn("Figure preview crop failed", figure.id || figure, error);
       figureCropCache.set(id, null);
     }
   }
 }
 
-async function cropFigure(doc, pageNo, bbox) {
+async function cropFigure(doc, pageNo, boxes) {
   if (!pageNo || pageNo > doc.numPages) return null;
   const page = await doc.getPage(pageNo);
   const scale = 2;
@@ -1316,21 +1392,47 @@ async function cropFigure(doc, pageNo, bbox) {
     ),
   ]);
 
-  const [x0, y0, x1, y1] = bbox;
   const W = canvas.width;
   const H = canvas.height;
   const pad = 8;
-  const sx = Math.max(0, x0 * W - pad);
-  const sy = Math.max(0, y0 * H - pad);
-  const sw = Math.min(W - sx, (x1 - x0) * W + pad * 2);
-  const sh = Math.min(H - sy, (y1 - y0) * H + pad * 2);
-  if (sw < 4 || sh < 4) return null;
+  for (const box of boxes) {
+    for (const rect of cropRectCandidates(box, W, H, scale, pad)) {
+      if (!rect || rect.sw < 4 || rect.sh < 4) continue;
+      const out = document.createElement("canvas");
+      out.width = Math.ceil(rect.sw);
+      out.height = Math.ceil(rect.sh);
+      out.getContext("2d").drawImage(canvas, rect.sx, rect.sy, rect.sw, rect.sh, 0, 0, out.width, out.height);
+      return out.toDataURL("image/png");
+    }
+  }
+  return null;
+}
 
-  const out = document.createElement("canvas");
-  out.width = Math.ceil(sw);
-  out.height = Math.ceil(sh);
-  out.getContext("2d").drawImage(canvas, sx, sy, sw, sh, 0, 0, out.width, out.height);
-  return out.toDataURL("image/png");
+function cropRectCandidates(box, canvasWidth, canvasHeight, scale, pad) {
+  const [x0, y0, x1, y1] = orderFigureBox(box);
+  const maxCoord = Math.max(Math.abs(x0), Math.abs(y0), Math.abs(x1), Math.abs(y1));
+  const normalized = maxCoord <= 1.5;
+  const candidates = normalized
+    ? [
+        [x0 * canvasWidth, y0 * canvasHeight, x1 * canvasWidth, y1 * canvasHeight],
+        [x0 * canvasWidth, canvasHeight - y1 * canvasHeight, x1 * canvasWidth, canvasHeight - y0 * canvasHeight],
+      ]
+    : [
+        [x0 * scale, y0 * scale, x1 * scale, y1 * scale],
+        [x0 * scale, canvasHeight - y1 * scale, x1 * scale, canvasHeight - y0 * scale],
+        [x0, y0, x1, y1],
+        [x0, canvasHeight - y1, x1, canvasHeight - y0],
+      ];
+
+  return candidates
+    .map(([left, top, right, bottom]) => {
+      const sx = Math.max(0, left - pad);
+      const sy = Math.max(0, top - pad);
+      const ex = Math.min(canvasWidth, right + pad);
+      const ey = Math.min(canvasHeight, bottom + pad);
+      return { sx, sy, sw: ex - sx, sh: ey - sy };
+    })
+    .filter((rect) => rect.sw > 0 && rect.sh > 0);
 }
 
 function applyFigureCrop(id, url) {
