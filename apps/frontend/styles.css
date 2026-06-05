@@ -1645,7 +1645,12 @@ body[data-stage="result"] .response-result {
   padding: clamp(22px, 3vw, 34px);
 }
 
+body[data-active-tab="overview"] .info-card.is-brief {
+  min-height: min(860px, calc(100vh - 220px));
+}
+
 .overview-brief {
+  height: 100%;
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(360px, 0.85fr);
   gap: clamp(22px, 4vw, 44px);
