@@ -862,180 +862,148 @@ function downloadResult() {
 
 function downloadRunbookPdf() {
   if (!state.runbook) return;
-  const stem = (state.result?.filename || "paper2run-runbook").replace(/\.pdf$/i, "");
-  const lines = runbookPdfLines(state.runbook, state.runbookMeta || {});
-  const blob = createTextPdfBlob("Paper2Run Runbook", lines);
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = `${stem}_runbook.pdf`;
-  anchor.click();
-  URL.revokeObjectURL(url);
-}
-
-function runbookPdfLines(runbook, meta) {
-  const repo = meta.github_repository || state.result?.github_repository || {};
-  const sourceFiles = meta.source_files || {};
-  const lines = [
-    "Paper2Run Reproduction Runbook",
-    "",
-    `Paper: ${state.result?.filename || state.job?.filename || "unknown"}`,
-    `Title: ${runbook.title || "Paper reproduction runbook"}`,
-    `Confidence: ${runbook.source_confidence || "unknown"}`,
-    `Model: ${repo.model || "OpenAI"}`,
-    `Repository: ${repo.url || resolvedGithubUrl() || "unknown"}`,
-    `Commit: ${repo.commit || "HEAD"}`,
-    `README: ${sourceFiles.readme?.found ? sourceFiles.readme.path : "not found"}`,
-    `Requirements: ${sourceFiles.requirements?.found ? sourceFiles.requirements.path : "not found"}`,
-    "",
-    "Overview",
-    runbook.overview || "",
-  ];
-
-  appendRunbookEnvironmentLines(lines, runbook.environment);
-  appendRunbookStepLines(lines, "Setup", runbook.setup);
-  appendRunbookStepLines(lines, "Data preparation", runbook.data_preparation);
-  appendRunbookStepLines(lines, "Reproduction steps", runbook.reproduction_steps);
-  appendRunbookStepLines(lines, "Evaluation", runbook.evaluation);
-  appendRunbookListLines(lines, "Expected outputs", runbook.expected_outputs);
-  appendRunbookStepLines(lines, "Troubleshooting", runbook.troubleshooting);
-  appendRunbookListLines(lines, "Assumptions", runbook.assumptions);
-  appendRunbookListLines(lines, "Open questions", runbook.open_questions);
-  appendRunbookListLines(lines, "Source notes", runbook.source_notes);
-  return lines;
-}
-
-function appendRunbookEnvironmentLines(lines, environment) {
-  if (!environment || typeof environment !== "object") return;
-  lines.push("", "Environment");
-  Object.entries({
-    package_manager: environment.package_manager,
-    python: environment.python,
-    frameworks: Array.isArray(environment.frameworks) ? environment.frameworks.join(", ") : environment.frameworks,
-    hardware: environment.hardware,
-  }).forEach(([key, value]) => {
-    if (value) lines.push(`- ${formatKey(key)}: ${formatValue(value)}`);
-  });
-}
-
-function appendRunbookStepLines(lines, title, steps) {
-  if (!Array.isArray(steps) || !steps.length) return;
-  lines.push("", title);
-  steps.forEach((step, index) => {
-    lines.push(`${index + 1}. ${step.title || `Step ${index + 1}`}`);
-    if (step.notes) lines.push(`   ${step.notes}`);
-    const commands = Array.isArray(step.commands) ? step.commands.filter(Boolean) : [];
-    commands.forEach((command, commandIndex) => {
-      lines.push(`   command ${index + 1}-${commandIndex + 1}: ${command}`);
-    });
-    if (step.source) lines.push(`   Source: ${step.source}`);
-  });
-}
-
-function appendRunbookListLines(lines, title, values) {
-  if (!Array.isArray(values) || !values.length) return;
-  lines.push("", title);
-  values.forEach((value) => lines.push(`- ${formatValue(value)}`));
-}
-
-function createTextPdfBlob(title, sourceLines) {
-  const pageWidth = 612;
-  const pageHeight = 792;
-  const margin = 54;
-  const lineHeight = 15;
-  const maxLinesPerPage = Math.floor((pageHeight - margin * 2) / lineHeight);
-  const wrapped = sourceLines.flatMap((line) => wrapPdfLine(line, 92));
-  const pages = [];
-  for (let index = 0; index < wrapped.length; index += maxLinesPerPage) {
-    pages.push(wrapped.slice(index, index + maxLinesPerPage));
+  const runbookMarkup = elements.runbookContent?.innerHTML || "";
+  if (!runbookMarkup) return;
+  const title = state.runbook?.title || "Paper2Run Runbook";
+  const printWindow = window.open("", "_blank", "width=1100,height=900");
+  if (!printWindow) {
+    window.print();
+    return;
   }
-  if (!pages.length) pages.push([title]);
-
-  const objects = [];
-  const addObject = (body) => {
-    objects.push(body);
-    return objects.length;
-  };
-  const pageRefs = [];
-  const contentRefs = [];
-  const catalogRef = addObject("<< /Type /Catalog /Pages 2 0 R >>");
-  const pagesRef = addObject("");
-
-  pages.forEach((pageLines) => {
-    const content = pdfContentStream(pageLines, margin, pageHeight - margin, lineHeight);
-    const contentRef = addObject(`<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
-    const pageRef = addObject(
-      `<< /Type /Page /Parent ${pagesRef} 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> /F2 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >> >> >> /Contents ${contentRef} 0 R >>`,
-    );
-    contentRefs.push(contentRef);
-    pageRefs.push(pageRef);
-  });
-
-  objects[pagesRef - 1] = `<< /Type /Pages /Kids [${pageRefs.map((ref) => `${ref} 0 R`).join(" ")}] /Count ${pageRefs.length} >>`;
-  const header = "%PDF-1.4\n";
-  const chunks = [header];
-  const offsets = [0];
-  objects.forEach((body, index) => {
-    offsets[index + 1] = chunks.join("").length;
-    chunks.push(`${index + 1} 0 obj\n${body}\nendobj\n`);
-  });
-  const xrefOffset = chunks.join("").length;
-  chunks.push(`xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`);
-  for (let index = 1; index <= objects.length; index += 1) {
-    chunks.push(`${String(offsets[index]).padStart(10, "0")} 00000 n \n`);
-  }
-  chunks.push(`trailer\n<< /Size ${objects.length + 1} /Root ${catalogRef} 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`);
-  return new Blob([chunks.join("")], { type: "application/pdf" });
+  printWindow.document.write(`
+    <!doctype html>
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>${escapeHtml(title)}</title>
+        <style>${runbookPrintCss()}</style>
+      </head>
+      <body>
+        <main class="runbook-print">
+          <header class="print-head">
+            <p>Paper2Run Runbook</p>
+            <h1>${escapeHtml(title)}</h1>
+            <small>${escapeHtml(state.result?.filename || state.job?.filename || "")}</small>
+          </header>
+          ${runbookMarkup}
+        </main>
+        <script>
+          window.addEventListener("load", () => {
+            window.focus();
+            window.print();
+          });
+        <\/script>
+      </body>
+    </html>
+  `);
+  printWindow.document.close();
 }
 
-function pdfContentStream(lines, x, y, lineHeight) {
-  const commands = ["BT", `/F2 16 Tf`, `${x} ${y} Td`];
-  lines.forEach((line, index) => {
-    if (index === 1) commands.push("/F1 11 Tf");
-    if (index > 0) commands.push(`0 -${lineHeight} Td`);
-    commands.push(`(${escapePdfString(line)}) Tj`);
-  });
-  commands.push("ET");
-  return commands.join("\n");
-}
-
-function wrapPdfLine(value, maxChars) {
-  const text = normalizePdfText(value);
-  if (!text) return [""];
-  const words = text.split(/\s+/);
-  const lines = [];
-  let current = "";
-  words.forEach((word) => {
-    if (!current) {
-      current = word;
-    } else if (`${current} ${word}`.length <= maxChars) {
-      current = `${current} ${word}`;
-    } else {
-      lines.push(current);
-      current = word;
+function runbookPrintCss() {
+  return `
+    @page { margin: 16mm; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: #0b1117;
+      color: #edf5f1;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
     }
-    while (current.length > maxChars) {
-      lines.push(current.slice(0, maxChars));
-      current = current.slice(maxChars);
+    .runbook-print { display: grid; gap: 16px; max-width: 1120px; margin: 0 auto; padding: 24px; }
+    .print-head, .runbook-hero, .runbook-section {
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 14px;
+      background: rgba(255,255,255,0.045);
+      box-shadow: 0 16px 40px rgba(0,0,0,0.24);
+      page-break-inside: avoid;
     }
-  });
-  if (current) lines.push(current);
-  return lines;
-}
-
-function normalizePdfText(value) {
-  return String(value ?? "")
-    .replaceAll("—", "-")
-    .replaceAll("–", "-")
-    .replaceAll("’", "'")
-    .replaceAll("“", '"')
-    .replaceAll("”", '"')
-    .replace(/[^\x09\x0A\x0D\x20-\x7E]/g, "")
-    .trim();
-}
-
-function escapePdfString(value) {
-  return normalizePdfText(value).replaceAll("\\", "\\\\").replaceAll("(", "\\(").replaceAll(")", "\\)");
+    .print-head { padding: 22px; }
+    .print-head p, .eyebrow, .section-label, .component-meta, .metric-pill small {
+      margin: 0;
+      color: #8b99a3;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .print-head h1, .runbook-hero h3, .runbook-section h3, .runbook-step h4 {
+      margin: 8px 0 0;
+      color: #f3faf7;
+      line-height: 1.12;
+    }
+    .print-head small { display: block; margin-top: 8px; color: #9aa7b1; }
+    .runbook-hero { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(260px, 0.9fr); gap: 18px; padding: 22px; }
+    .runbook-hero p, .runbook-step p, .runbook-list { color: #c8d2d0; line-height: 1.55; }
+    .runbook-card-head { display: flex; justify-content: space-between; gap: 12px; }
+    .ask-about-button, .code-copy { display: none !important; }
+    .runbook-source-grid { display: grid; gap: 8px; }
+    .metric-pill {
+      display: grid;
+      gap: 2px;
+      padding: 8px 11px;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 999px;
+      background: rgba(255,255,255,0.06);
+      color: inherit;
+      text-decoration: none;
+    }
+    .metric-pill strong { overflow-wrap: anywhere; }
+    .runbook-section { display: grid; gap: 12px; padding: 18px; }
+    .runbook-step-list { display: grid; gap: 12px; }
+    .runbook-step {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: 12px;
+      padding: 14px;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 14px;
+      background: rgba(255,255,255,0.035);
+      page-break-inside: avoid;
+    }
+    .rank-badge {
+      display: grid;
+      place-items: center;
+      width: 34px;
+      min-height: 34px;
+      border-radius: 999px;
+      background: rgba(76,240,182,0.14);
+      color: #4cf0b6;
+      font-weight: 800;
+    }
+    .code-card {
+      margin-top: 10px;
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,0.13);
+      border-radius: 12px;
+      background: #090e14;
+      page-break-inside: avoid;
+    }
+    .code-card-head {
+      display: flex;
+      padding: 9px 12px;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+      color: #8b99a3;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 11px;
+      font-weight: 800;
+    }
+    .code-body {
+      margin: 0;
+      padding: 14px 16px;
+      color: #dbe4e1;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 11px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+    }
+    @media print {
+      body { background: #0b1117; }
+      .runbook-print { padding: 0; }
+    }
+  `;
 }
 
 function goToLanding() {
@@ -2664,12 +2632,66 @@ function summaryObject() {
 }
 
 function getExtractionItems(result, type) {
+  const items = getRawExtractionItems(result, type);
+  if (type === "figure") return items.filter(isFigureComponent);
+  if (type === "algorithm") {
+    const promotedAlgorithms = getRawExtractionItems(result, "figure").filter(isAlgorithmComponent);
+    return dedupeComponents([...items, ...promotedAlgorithms]);
+  }
+  return items;
+}
+
+function getRawExtractionItems(result, type) {
   const key = `${type}_extractor`;
   const direct = extractionItems(result?.extractions?.[key]);
   if (direct.length) return direct;
   return extractionGroups(result)
     .filter(([groupKey]) => groupKey.includes(type))
     .flatMap(([, items]) => items);
+}
+
+function componentTitleHint(item) {
+  const metadata = normalizedMetadata(item);
+  return [
+    item?.title,
+    metadata.title,
+    item?.name,
+    metadata.name,
+    item?.caption,
+    metadata.caption,
+    item?.algorithm_name,
+    metadata.algorithm_name,
+    item?.id,
+    item?.component_id,
+    item?.figure_id,
+    item?.algorithm_id,
+    item?.type,
+    metadata.type,
+    metadata.role_label,
+  ]
+    .filter(Boolean)
+    .map(String)
+    .join(" ");
+}
+
+function isAlgorithmComponent(item) {
+  return /\balgorithm\b/i.test(componentTitleHint(item));
+}
+
+function isFigureComponent(item) {
+  const hint = componentTitleHint(item);
+  if (isAlgorithmComponent(item)) return false;
+  return /\bfig(?:ure)?[\s_.-]*\d*\b/i.test(hint) || /\bfigure\b/i.test(hint);
+}
+
+function dedupeComponents(items) {
+  const seen = new Set();
+  return items.filter((item, index) => {
+    const key = componentIds(item)[0] || item?.id || item?.component_id || `item_${index}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function componentIds(item) {
