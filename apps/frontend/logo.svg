@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Paper2Run</title>
+  <desc id="desc">A paper-to-code mark with a document node connected to execution blocks.</desc>
+  <defs>
+    <linearGradient id="tile" x1="42" y1="30" x2="214" y2="226" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#4CF0B6"/>
+      <stop offset="0.52" stop-color="#27D6A2"/>
+      <stop offset="1" stop-color="#18BFA2"/>
+    </linearGradient>
+    <linearGradient id="paper" x1="61" y1="50" x2="145" y2="137" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#DFFAF2"/>
+    </linearGradient>
+    <filter id="softShadow" x="-30%" y="-25%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="12" stdDeviation="13" flood-color="#02110D" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  <rect width="256" height="256" rx="58" fill="#07130F"/>
+  <rect x="22" y="22" width="212" height="212" rx="44" fill="url(#tile)" filter="url(#softShadow)"/>
+  <rect x="23.5" y="23.5" width="209" height="209" rx="42.5" fill="none" stroke="#FFFFFF" stroke-opacity="0.22" stroke-width="3"/>
+  <path d="M63 55h63v77H63z" fill="url(#paper)"/>
+  <path d="M91.5 132v36" stroke="#F5FFFB" stroke-width="17" stroke-linecap="round"/>
+  <circle cx="91.5" cy="184" r="30" fill="#F5FFFB"/>
+  <path d="M142 55h27v27h-27zM169 82h27v27h-27zM196 109h27v27h-27zM169 136h27v27h-27zM142 163h27v27h-27z" fill="#F5FFFB"/>
+  <path d="M123 92h35v0M158 92v27M158 119h27M185 119v27M185 146h-27M158 146v27M158 173h-31" fill="none" stroke="#DFFAF2" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" opacity="0.68"/>
+  <circle cx="158" cy="92" r="5" fill="#0C6F5A"/>
+  <circle cx="185" cy="119" r="5" fill="#0C6F5A"/>
+  <circle cx="158" cy="173" r="5" fill="#0C6F5A"/>
+</svg>

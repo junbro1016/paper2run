@@ -2195,6 +2195,7 @@ function renderAskPanel() {
     }
   `;
   elements.askMessages.scrollTop = elements.askMessages.scrollHeight;
+  scheduleMathTypeset();
 }
 
 function renderAskMessage(message) {
@@ -2232,7 +2233,108 @@ function renderAskAttachment(selected) {
 }
 
 function formatAskContent(value) {
-  return escapeHtml(value).replace(/\n{2,}/g, "<br><br>").replace(/\n/g, "<br>");
+  const text = String(value || "").replace(/\r\n?/g, "\n").trim();
+  if (!text) return "";
+
+  const blocks = [];
+  const lines = text.split("\n");
+  let index = 0;
+  while (index < lines.length) {
+    const line = lines[index];
+
+    if (!line.trim()) {
+      index += 1;
+      continue;
+    }
+
+    if (line.trim().startsWith("```")) {
+      const code = [];
+      index += 1;
+      while (index < lines.length && !lines[index].trim().startsWith("```")) {
+        code.push(lines[index]);
+        index += 1;
+      }
+      if (index < lines.length) index += 1;
+      blocks.push(`<pre><code>${escapeHtml(code.join("\n"))}</code></pre>`);
+      continue;
+    }
+
+    if (line.trim() === "\\[") {
+      const math = [line];
+      index += 1;
+      while (index < lines.length) {
+        math.push(lines[index]);
+        if (lines[index].trim() === "\\]") {
+          index += 1;
+          break;
+        }
+        index += 1;
+      }
+      blocks.push(`<div class="ask-math">${escapeHtml(math.join("\n"))}</div>`);
+      continue;
+    }
+
+    const heading = line.match(/^(#{1,4})\s+(.+)$/);
+    if (heading) {
+      const level = Math.min(4, heading[1].length + 2);
+      blocks.push(`<h${level}>${formatInlineMarkdown(heading[2])}</h${level}>`);
+      index += 1;
+      continue;
+    }
+
+    if (/^\s*[-*]\s+/.test(line)) {
+      const items = [];
+      while (index < lines.length && /^\s*[-*]\s+/.test(lines[index])) {
+        items.push(`<li>${formatInlineMarkdown(lines[index].replace(/^\s*[-*]\s+/, ""))}</li>`);
+        index += 1;
+      }
+      blocks.push(`<ul>${items.join("")}</ul>`);
+      continue;
+    }
+
+    if (/^\s*\d+[.)]\s+/.test(line)) {
+      const items = [];
+      while (index < lines.length && /^\s*\d+[.)]\s+/.test(lines[index])) {
+        items.push(`<li>${formatInlineMarkdown(lines[index].replace(/^\s*\d+[.)]\s+/, ""))}</li>`);
+        index += 1;
+      }
+      blocks.push(`<ol>${items.join("")}</ol>`);
+      continue;
+    }
+
+    const paragraph = [];
+    while (
+      index < lines.length &&
+      lines[index].trim() &&
+      !lines[index].trim().startsWith("```") &&
+      lines[index].trim() !== "\\[" &&
+      !/^(#{1,4})\s+/.test(lines[index]) &&
+      !/^\s*[-*]\s+/.test(lines[index]) &&
+      !/^\s*\d+[.)]\s+/.test(lines[index])
+    ) {
+      paragraph.push(lines[index]);
+      index += 1;
+    }
+    blocks.push(`<p>${formatInlineMarkdown(paragraph.join(" "))}</p>`);
+  }
+
+  return `<div class="ask-markdown">${blocks.join("")}</div>`;
+}
+
+function formatInlineMarkdown(value) {
+  let html = escapeHtml(value);
+  const codeTokens = [];
+  html = html.replace(/`([^`]+)`/g, (_, code) => {
+    const token = `@@CODE_${codeTokens.length}@@`;
+    codeTokens.push(`<code>${code}</code>`);
+    return token;
+  });
+  html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
+  codeTokens.forEach((code, index) => {
+    html = html.replace(`@@CODE_${index}@@`, code);
+  });
+  return html;
 }
 
 function compactChatHistory(messages) {
