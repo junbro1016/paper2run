@@ -1560,11 +1560,9 @@ function applyFigureCrop(id, url) {
 function renderFigurePanel(item) {
   const metadata = normalizedMetadata(item);
   const caption = metadata.caption || item.caption || item.content || item.id || "Extracted figure";
-  const insight = metadata.key_insight || item.content || item.description || "";
   return `
     <div class="figure-panel">
       ${figureVisual(item, caption)}
-      ${insight ? `<div><p>${escapeHtml(insight)}</p></div>` : ""}
     </div>
   `;
 }
