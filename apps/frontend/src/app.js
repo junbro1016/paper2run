@@ -15,6 +15,8 @@ const FETCH_TIMEOUT_MS = 30000;
 const MAX_TRANSIENT_FETCH_RETRIES = 5;
 const MIN_PROCESS_STEP_MS = 3000;
 const PROCESS_RENDER_INTERVAL_MS = 500;
+const CODE_LINE_HEIGHT_PX = 20;
+const CODE_VERTICAL_PADDING_PX = 28;
 
 const PIPELINE_STEPS = ["Profile", "Extract", "Ground", "Verify", "Finalize"];
 
@@ -49,6 +51,8 @@ const state = {
   polling: false,
   pollStartedAt: null,
   processStartedAt: null,
+  processDisplayIndex: 0,
+  processDisplayStageStartedAt: null,
   processRenderTimer: null,
   transientFetchFailures: 0,
   mathTypesetTimer: null,
@@ -152,6 +156,7 @@ const ASK_SUGGESTIONS = [
 
 const askContextStore = new Map();
 let askContextSeq = 0;
+let layoutSyncFrame = 0;
 
 elements.repoUrl.value = state.repoUrl;
 elements.apiBaseUrl.value = state.apiBaseUrl;
@@ -182,6 +187,10 @@ function wireEvents() {
   elements.apiBaseUrl.addEventListener("input", () => {
     state.apiBaseUrl = elements.apiBaseUrl.value.trim();
     saveSettings();
+  });
+
+  window.addEventListener("resize", () => {
+    scheduleLayoutSync();
   });
 
   document.addEventListener("click", (event) => {
@@ -298,6 +307,7 @@ function wireEvents() {
         generateRunbook();
       }
       enhanceCodeBlocks();
+      scheduleLayoutSync();
     });
   });
 }
@@ -441,6 +451,7 @@ function restoreSavedJob() {
       addStatus(`Restored completed job: ${saved.job_id}. Fetching result.`, "pending");
       state.busy = true;
       state.processStartedAt = saved.savedAt || Date.now();
+      resetProcessDisplay();
       startProcessRenderTicker();
       restorePaperPdfForJob(saved)
         .finally(() => fetchFullResult(saved.job_id))
@@ -454,6 +465,7 @@ function restoreSavedJob() {
       state.busy = true;
       state.pollStartedAt = saved.savedAt || Date.now();
       state.processStartedAt = state.pollStartedAt;
+      resetProcessDisplay();
       startProcessRenderTicker();
       restorePaperPdfForJob(saved)
         .finally(() => pollUntilDone(saved.job_id))
@@ -542,6 +554,7 @@ async function runPipeline() {
   state.polling = true;
   state.pollStartedAt = Date.now();
   state.processStartedAt = state.pollStartedAt;
+  resetProcessDisplay();
   startProcessRenderTicker();
   state.transientFetchFailures = 0;
   setBusy(true);
@@ -832,6 +845,7 @@ function clearAll() {
   state.polling = false;
   state.pollStartedAt = null;
   state.processStartedAt = null;
+  resetProcessDisplay();
   stopProcessRenderTicker();
   state.transientFetchFailures = 0;
   paperPdf.file = null;
@@ -1029,7 +1043,9 @@ function renderStage() {
 function startProcessRenderTicker() {
   if (state.processRenderTimer) return;
   state.processRenderTimer = window.setInterval(() => {
-    if (document.body.dataset.stage === "processing") renderProcessing();
+    if (document.body.dataset.stage !== "processing") return;
+    advanceProcessDisplayByTime();
+    renderProcessing();
   }, PROCESS_RENDER_INTERVAL_MS);
 }
 
@@ -1039,21 +1055,36 @@ function stopProcessRenderTicker() {
   state.processRenderTimer = null;
 }
 
-function elapsedProcessStageIndex() {
-  const startedAt = state.processStartedAt || state.pollStartedAt || Date.now();
-  return Math.min(
-    PROCESS_STEPS.length - 1,
-    Math.floor(Math.max(0, Date.now() - startedAt) / MIN_PROCESS_STEP_MS),
-  );
+function resetProcessDisplay() {
+  state.processDisplayIndex = 0;
+  state.processDisplayStageStartedAt = Date.now();
+}
+
+function advanceProcessDisplayByTime() {
+  if (!state.polling) return;
+  if (!state.processDisplayStageStartedAt) resetProcessDisplay();
+  const elapsed = Date.now() - state.processDisplayStageStartedAt;
+  if (elapsed < MIN_PROCESS_STEP_MS || state.processDisplayIndex >= PROCESS_STEPS.length - 1) return;
+  const stepsToAdvance = Math.floor(elapsed / MIN_PROCESS_STEP_MS);
+  const nextIndex = Math.min(PROCESS_STEPS.length - 1, state.processDisplayIndex + stepsToAdvance);
+  state.processDisplayIndex = nextIndex;
+  state.processDisplayStageStartedAt += stepsToAdvance * MIN_PROCESS_STEP_MS;
 }
 
 async function waitForProcessDisplayCompletion() {
-  if (!state.processStartedAt) state.processStartedAt = Date.now();
-  const minDuration = PROCESS_STEPS.length * MIN_PROCESS_STEP_MS;
-  while (state.polling && Date.now() - state.processStartedAt < minDuration) {
+  if (!state.processDisplayStageStartedAt) resetProcessDisplay();
+  while (state.polling && state.processDisplayIndex < PROCESS_STEPS.length - 1) {
+    const elapsed = Date.now() - state.processDisplayStageStartedAt;
+    await delay(Math.max(0, MIN_PROCESS_STEP_MS - elapsed));
+    if (!state.polling) return;
+    state.processDisplayIndex += 1;
+    state.processDisplayStageStartedAt = Date.now();
     renderProcessing();
-    await delay(PROCESS_RENDER_INTERVAL_MS);
   }
+  if (!state.polling) return;
+  const elapsed = Date.now() - state.processDisplayStageStartedAt;
+  await delay(Math.max(0, MIN_PROCESS_STEP_MS - elapsed));
+  renderProcessing();
 }
 
 // The polling payload has no explicit stage field, so infer the current
@@ -1076,7 +1107,7 @@ function currentBackendStageIndex() {
 }
 
 function currentStageIndex() {
-  return elapsedProcessStageIndex();
+  return Math.max(0, Math.min(PROCESS_STEPS.length - 1, state.processDisplayIndex || 0));
 }
 
 function renderThreadRequest() {
@@ -1169,6 +1200,50 @@ function render() {
   updateControls();
   scheduleMathTypeset();
   enhanceCodeBlocks();
+  scheduleLayoutSync();
+}
+
+function scheduleLayoutSync() {
+  if (layoutSyncFrame) window.cancelAnimationFrame(layoutSyncFrame);
+  layoutSyncFrame = window.requestAnimationFrame(() => {
+    layoutSyncFrame = 0;
+    syncOverviewAskPanelHeight();
+    syncCodeScrollHeights();
+  });
+}
+
+function syncOverviewAskPanelHeight() {
+  if (!elements.askPanel) return;
+  if (state.activeTab !== "overview" || !state.result) {
+    elements.askPanel.style.removeProperty("--overview-ask-height");
+    return;
+  }
+
+  const overviewCard = elements.overviewGrid?.querySelector(".info-card.is-brief");
+  if (!overviewCard) return;
+
+  const cardRect = overviewCard.getBoundingClientRect();
+  const panelRect = elements.askPanel.getBoundingClientRect();
+  const viewportMax = Math.max(420, window.innerHeight - 126);
+  const targetHeight = Math.max(460, Math.min(viewportMax, cardRect.bottom - panelRect.top));
+  elements.askPanel.style.setProperty("--overview-ask-height", `${Math.round(targetHeight)}px`);
+}
+
+function syncCodeScrollHeights() {
+  document.querySelectorAll(".evidence-code .code-card").forEach((card) => {
+    const scroll = card.querySelector(".code-scroll");
+    const pane = card.closest(".code-pane-inner");
+    if (!scroll || !pane) return;
+
+    const paneRect = pane.getBoundingClientRect();
+    const scrollRect = scroll.getBoundingClientRect();
+    const available = paneRect.bottom - scrollRect.top - 10;
+    const minimum = CODE_VERTICAL_PADDING_PX + CODE_LINE_HEIGHT_PX * 5;
+    const desired = Math.max(minimum, available);
+    const visibleLines = Math.max(5, Math.floor((desired - CODE_VERTICAL_PADDING_PX) / CODE_LINE_HEIGHT_PX));
+    const alignedHeight = CODE_VERTICAL_PADDING_PX + visibleLines * CODE_LINE_HEIGHT_PX;
+    scroll.style.setProperty("--code-scroll-height", `${Math.round(alignedHeight)}px`);
+  });
 }
 
 function renderJob() {
@@ -2620,6 +2695,7 @@ function paintCode(card, codeText, startLine) {
   }
   codeEl.dataset.raw = codeText;
   scroll.dataset.state = "ready";
+  scheduleLayoutSync();
 }
 
 async function enhanceCard(card) {
@@ -2643,8 +2719,9 @@ async function enhanceCard(card) {
   if (!text) return;
   const all = text.split("\n");
   const requestedEnd = Number.isFinite(end) && end >= start ? end : start;
-  const contextBefore = 3;
-  const contextAfter = Math.max(5, 10 - (requestedEnd - start + 1));
+  const matchedLines = requestedEnd - start + 1;
+  const contextBefore = 4;
+  const contextAfter = Math.max(18, 32 - contextBefore - matchedLines);
   const from = Math.max(1, start - contextBefore);
   const to = Math.min(all.length, requestedEnd + contextAfter);
   const slice = all.slice(from - 1, to).join("\n");
@@ -2653,6 +2730,7 @@ async function enhanceCard(card) {
 
 function enhanceCodeBlocks() {
   document.querySelectorAll(".code-card:not([data-enhanced])").forEach((card) => enhanceCard(card));
+  scheduleLayoutSync();
 }
 
 function renderRuntimeItem(entry) {

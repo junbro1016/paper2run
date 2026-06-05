@@ -1215,14 +1215,14 @@ body[data-stage="result"] .response-result {
 
 body[data-active-tab="overview"] .ask-panel {
   position: sticky;
-  grid-template-rows: auto auto auto;
-  height: auto;
-  min-height: 0;
-  max-height: none;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  height: var(--overview-ask-height, auto);
+  min-height: 460px;
+  max-height: calc(100vh - 126px);
 }
 
 body[data-active-tab="overview"] .ask-messages {
-  overflow: visible;
+  overflow-y: auto;
 }
 
 .ask-panel-head {
@@ -1658,14 +1658,14 @@ body[data-active-tab="overview"] .ask-messages {
 
 .code-scroll {
   display: flex;
-  height: 128px;
+  height: var(--code-scroll-height, 168px);
   min-height: 128px;
-  max-height: 128px;
+  max-height: var(--code-scroll-height, 168px);
   overflow-x: auto;
   overflow-y: auto;
   font-family: var(--mono);
   font-size: 12.5px;
-  line-height: 1.6;
+  line-height: 20px;
   cursor: pointer;
 }
 
@@ -2370,7 +2370,7 @@ body[data-active-tab="overview"] .info-card.is-brief {
 .evidence-code .mapping-card:last-child .match-list > .code-card:last-child .code-scroll {
   flex: none;
   min-height: 128px;
-  max-height: 128px;
+  max-height: var(--code-scroll-height, 168px);
   overflow-y: auto;
 }
 
