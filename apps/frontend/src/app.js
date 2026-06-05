@@ -1,5 +1,6 @@
 const DEFAULT_API_BASE_URL = "https://paper2run.onrender.com";
 const DEFAULT_RUNBOOK_API_URL = "https://paper2run-nevv.onrender.com/runbook";
+const DEFAULT_CHAT_API_URL = DEFAULT_RUNBOOK_API_URL.replace(/\/runbook$/, "/chat");
 const LEGACY_API_BASE_URLS = new Set(["https://paper2run-production.up.railway.app"]);
 const LEGACY_DEFAULT_REPO_URLS = new Set(["https://github.com/tensorflow/tensor2tensor"]);
 const SETTINGS_STORAGE_KEY = "paper2run.pipeline.frontend.settings";
@@ -29,6 +30,12 @@ const state = {
   runbookMeta: null,
   runbookBusy: false,
   runbookError: "",
+  ask: {
+    messages: [],
+    selectedContext: null,
+    busy: false,
+    error: "",
+  },
   statuses: [],
   activeTab: "overview",
   busy: false,
@@ -83,6 +90,14 @@ const elements = {
   runbookSummary: document.querySelector("#runbookSummary"),
   runbookContent: document.querySelector("#runbookContent"),
   figurePdfInput: document.querySelector("#figurePdfInput"),
+  askPanel: document.querySelector(".ask-panel"),
+  askMessages: document.querySelector("#askMessages"),
+  askForm: document.querySelector("#askForm"),
+  askInput: document.querySelector("#askInput"),
+  askSendBtn: document.querySelector("#askSendBtn"),
+  askStatus: document.querySelector("#askStatus"),
+  askSuggestions: document.querySelector("#askSuggestions"),
+  askContextChip: document.querySelector("#askContextChip"),
 };
 
 // Calm, honest status copy keyed to the inferred step — no fake counters.
@@ -121,6 +136,15 @@ const PROCESS_STEPS = [
     detail: "Assembling the final result view and preparing the evidence report.",
   },
 ];
+
+const ASK_SUGGESTIONS = [
+  "Explain this simply",
+  "How is this grounded in code?",
+  "What should I inspect next?",
+];
+
+const askContextStore = new Map();
+let askContextSeq = 0;
 
 elements.repoUrl.value = state.repoUrl;
 elements.apiBaseUrl.value = state.apiBaseUrl;
@@ -162,6 +186,10 @@ function wireEvents() {
   elements.clearBtn.addEventListener("click", clearAll);
   elements.downloadBtn.addEventListener("click", downloadResult);
   elements.generateRunbookBtn?.addEventListener("click", () => generateRunbook({ force: true }));
+  elements.askForm?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    sendAskMessage(elements.askInput.value);
+  });
 
   elements.newRunBtn?.addEventListener("click", () => goToLanding());
   elements.brandHome?.addEventListener("click", () => goToLanding());
@@ -176,7 +204,21 @@ function wireEvents() {
     elements.figurePdfInput.value = "";
   });
 
+  elements.askSuggestions?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-suggestion]");
+    if (!button) return;
+    sendAskMessage(button.dataset.suggestion || button.textContent || "");
+  });
+
   document.querySelector(".response-result")?.addEventListener("click", (event) => {
+    const askButton = event.target.closest("[data-ask-context]");
+    if (askButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      selectAskContext(askButton.dataset.askContext);
+      return;
+    }
+
     const button = event.target.closest(".code-copy");
     if (button) {
       event.preventDefault();
@@ -366,6 +408,12 @@ function updateControls() {
   if (elements.generateRunbookBtn) {
     elements.generateRunbookBtn.disabled = !state.result || state.runbookBusy;
   }
+  if (elements.askSendBtn) {
+    elements.askSendBtn.disabled = !state.result || state.ask.busy;
+  }
+  if (elements.askInput) {
+    elements.askInput.disabled = !state.result || state.ask.busy;
+  }
 }
 
 function renderFileMeta() {
@@ -386,6 +434,7 @@ async function runPipeline() {
   state.runbookMeta = null;
   state.runbookError = "";
   state.runbookBusy = false;
+  resetAskState();
   state.job = null;
   state.forceLanding = false;
   state.lastStageIndex = -1;
@@ -515,6 +564,7 @@ async function fetchFullResult(jobId) {
   state.runbookMeta = result.runbook_meta || null;
   state.runbookError = "";
   state.runbookBusy = false;
+  resetAskState();
   saveJobSnapshot({ ...result, status: "done" });
   state.activeTab = "overview";
   addStatus("Result loaded", "done");
@@ -603,6 +653,7 @@ async function loadResultJson(file) {
     state.runbookMeta = state.result.runbook_meta || null;
     state.runbookError = "";
     state.runbookBusy = false;
+    resetAskState();
     figureCropCache.clear();
     paperPdf.docFile = null;
     paperPdf.docPromise = null;
@@ -635,6 +686,7 @@ function clearAll() {
   state.runbookMeta = null;
   state.runbookError = "";
   state.runbookBusy = false;
+  resetAskState();
   state.statuses = [];
   state.polling = false;
   state.pollStartedAt = null;
@@ -781,10 +833,12 @@ function render() {
   renderProcessing();
   renderJob();
   renderHeader();
+  resetAskContextRegistry();
   renderTabs();
   renderOverview();
   renderEvidenceTabs();
   renderRunbook();
+  renderAskPanel();
   updateControls();
   scheduleMathTypeset();
   enhanceCodeBlocks();
@@ -1374,6 +1428,11 @@ function renderRunbook() {
   const repo = meta.github_repository || state.result.github_repository || {};
   const sourceFiles = meta.source_files || {};
   const commandsUsed = Array.isArray(meta.commands_used) ? meta.commands_used : [];
+  const runbookContextId = registerAskContext({
+    kind: "runbook",
+    title: runbook.title || "Paper reproduction runbook",
+    payload: buildRunbookAskContext(runbook, meta),
+  });
   elements.runbookSummary.textContent = `${runbook.source_confidence || "unknown"} confidence · ${
     repo.model || "OpenAI"
   } · ${commandsUsed.length} commands considered`;
@@ -1381,7 +1440,10 @@ function renderRunbook() {
   elements.runbookContent.innerHTML = `
     <article class="runbook-hero">
       <div>
-        <p class="eyebrow">Reproduction path</p>
+        <div class="runbook-card-head">
+          <p class="eyebrow">Reproduction path</p>
+          ${askButton(runbookContextId)}
+        </div>
         <h3>${escapeHtml(runbook.title || "Paper reproduction runbook")}</h3>
         <p>${escapeHtml(runbook.overview || "")}</p>
       </div>
@@ -1438,11 +1500,19 @@ function renderRunbookStepSection(title, steps) {
 
 function renderRunbookStep(step, index) {
   const commands = Array.isArray(step.commands) ? step.commands.filter(Boolean) : [];
+  const askContextId = registerAskContext({
+    kind: "runbook_step",
+    title: step.title || `Runbook step ${index + 1}`,
+    payload: buildRunbookStepAskContext(step, index),
+  });
   return `
     <article class="runbook-step">
       <span class="rank-badge">${escapeHtml(index + 1)}</span>
       <div>
-        <h4>${escapeHtml(step.title || `Step ${index + 1}`)}</h4>
+        <div class="runbook-card-head">
+          <h4>${escapeHtml(step.title || `Step ${index + 1}`)}</h4>
+          ${askButton(askContextId)}
+        </div>
         ${step.notes ? `<p>${escapeHtml(step.notes)}</p>` : ""}
         ${
           commands.length
@@ -1517,6 +1587,11 @@ function renderEvidenceCard(type, item, index) {
     (a, b) => statusRank(a.verification_status) - statusRank(b.verification_status),
   );
   const title = componentTitle(item, type, index);
+  const askContextId = registerAskContext({
+    kind: type,
+    title,
+    payload: buildComponentAskContext(type, item, index, mappings),
+  });
 
   return `
     <article class="evidence-card component-card" data-kind="${escapeAttribute(type)}">
@@ -1529,6 +1604,7 @@ function renderEvidenceCard(type, item, index) {
               <h3>${escapeHtml(String(title).slice(0, 180))}</h3>
             </div>
           </div>
+          ${askButton(askContextId)}
         </div>
         <div class="component-meta">${escapeHtml(componentMeta(item) || `${type} component`)}</div>
         <div class="component-body">${renderComponentBody(item, type)}</div>
@@ -1547,6 +1623,222 @@ function renderEvidenceCard(type, item, index) {
       </div>
     </article>
   `;
+}
+
+function resetAskState() {
+  state.ask.messages = [];
+  state.ask.selectedContext = null;
+  state.ask.busy = false;
+  state.ask.error = "";
+}
+
+function resetAskContextRegistry() {
+  askContextStore.clear();
+  askContextSeq = 0;
+}
+
+function registerAskContext(context) {
+  const id = `ask_${++askContextSeq}`;
+  askContextStore.set(id, context);
+  return id;
+}
+
+function askButton(contextId) {
+  return `
+    <button class="ask-about-button" type="button" data-ask-context="${escapeAttribute(contextId)}">
+      Ask about this
+    </button>
+  `;
+}
+
+function selectAskContext(contextId) {
+  const context = askContextStore.get(contextId);
+  if (!context) return;
+  state.ask.selectedContext = context;
+  state.ask.error = "";
+  state.ask.messages.push({
+    role: "assistant",
+    content: `${context.title || "This item"} is now loaded as the chat context. Ask a focused question about this ${formatAskKind(context.kind)}.`,
+    contextTitle: context.title,
+  });
+  state.ask.messages = state.ask.messages.slice(-14);
+  renderAskPanel();
+  elements.askInput?.focus();
+}
+
+async function sendAskMessage(rawQuestion) {
+  const question = String(rawQuestion || "").trim();
+  if (!question || !state.result || state.ask.busy) return;
+
+  state.ask.error = "";
+  state.ask.messages.push({ role: "user", content: question });
+  if (elements.askInput) elements.askInput.value = "";
+  state.ask.busy = true;
+  renderAskPanel();
+  updateControls();
+
+  try {
+    const context = state.ask.selectedContext?.payload || buildResultAskContext();
+    const contextTitle = state.ask.selectedContext?.title || context.title;
+    const response = await fetchWithRetry(DEFAULT_CHAT_API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        question,
+        context,
+        messages: compactChatHistory(state.ask.messages),
+      }),
+    });
+    const payload = await readJsonResponse(response);
+    if (!response.ok) {
+      throw new Error(errorMessage(payload, `Chat request failed with HTTP ${response.status}`));
+    }
+    state.ask.messages.push({
+      role: "assistant",
+      content: payload.answer || payload.output_text || "I could not find an answer in the provided context.",
+      contextTitle,
+    });
+  } catch (error) {
+    state.ask.error = error.message;
+    state.ask.messages.push({
+      role: "assistant",
+      content: `I could not answer that yet: ${error.message}`,
+    });
+  } finally {
+    state.ask.busy = false;
+    state.ask.messages = state.ask.messages.slice(-16);
+    renderAskPanel();
+    updateControls();
+  }
+}
+
+function renderAskPanel() {
+  if (!elements.askMessages) return;
+  const selected = state.ask.selectedContext;
+  const contextLabel = selected?.title || (state.result ? "Result context" : "No result yet");
+  elements.askContextChip.textContent = contextLabel.length > 34 ? `${contextLabel.slice(0, 31)}...` : contextLabel;
+  elements.askContextChip.title = contextLabel;
+  elements.askStatus.textContent = state.ask.error || (state.ask.busy ? "Asking OpenAI with the selected JSON context..." : "");
+  elements.askSuggestions.innerHTML = ASK_SUGGESTIONS.map(
+    (suggestion) => `
+      <button class="ask-suggestion" type="button" data-suggestion="${escapeAttribute(suggestion)}">
+        ${escapeHtml(suggestion)}
+      </button>
+    `,
+  ).join("");
+
+  const messages = state.ask.messages.length
+    ? state.ask.messages
+    : [
+        {
+          role: "assistant",
+          content:
+            "Load a pipeline result, then ask about the paper. Use Ask about this on a card to narrow my context to that exact JSON component.",
+        },
+      ];
+  elements.askMessages.innerHTML = `
+    ${messages.map(renderAskMessage).join("")}
+    ${
+      state.ask.busy
+        ? `<div class="ask-message is-assistant"><div class="ask-bubble"><span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span></div></div>`
+        : ""
+    }
+  `;
+  elements.askMessages.scrollTop = elements.askMessages.scrollHeight;
+}
+
+function renderAskMessage(message) {
+  const role = message.role === "user" ? "user" : "assistant";
+  return `
+    <div class="ask-message is-${escapeAttribute(role)}">
+      <div class="ask-bubble">
+        ${role === "assistant" ? `<strong>Paper2Run</strong>` : ""}
+        <div>${formatAskContent(message.content)}</div>
+        ${message.contextTitle ? `<small>Context: ${escapeHtml(message.contextTitle)}</small>` : ""}
+      </div>
+    </div>
+  `;
+}
+
+function formatAskContent(value) {
+  return escapeHtml(value).replace(/\n{2,}/g, "<br><br>").replace(/\n/g, "<br>");
+}
+
+function compactChatHistory(messages) {
+  return messages.slice(-8).map((message) => ({
+    role: message.role === "user" ? "user" : "assistant",
+    content: String(message.content || "").slice(0, 1800),
+  }));
+}
+
+function formatAskKind(kind) {
+  return String(kind || "component").replaceAll("_", " ");
+}
+
+function buildComponentAskContext(type, item, index, mappings) {
+  return {
+    scope: "single_component",
+    title: componentTitle(item, type, index),
+    kind: type,
+    paper: {
+      filename: state.result?.filename || "",
+      github_url: resolvedGithubUrl(),
+      profile: state.result?.profile || {},
+    },
+    component: item,
+    mappings,
+  };
+}
+
+function buildRunbookAskContext(runbook, meta) {
+  return {
+    scope: "runbook",
+    title: runbook.title || "Paper reproduction runbook",
+    kind: "runbook",
+    paper: {
+      filename: state.result?.filename || "",
+      github_url: resolvedGithubUrl(),
+      profile: state.result?.profile || {},
+    },
+    runbook,
+    runbook_meta: meta,
+  };
+}
+
+function buildRunbookStepAskContext(step, index) {
+  return {
+    scope: "runbook_step",
+    title: step.title || `Runbook step ${index + 1}`,
+    kind: "runbook_step",
+    paper: {
+      filename: state.result?.filename || "",
+      github_url: resolvedGithubUrl(),
+      profile: state.result?.profile || {},
+    },
+    step_index: index + 1,
+    step,
+  };
+}
+
+function buildResultAskContext() {
+  return {
+    scope: "pipeline_result",
+    title: state.result?.filename || "Paper2Run result",
+    kind: "result",
+    paper: {
+      filename: state.result?.filename || "",
+      github_url: resolvedGithubUrl(),
+      profile: state.result?.profile || {},
+      overall_grounding_score: state.result?.overall_grounding_score,
+    },
+    components: {
+      equations: getExtractionItems(state.result, "equation").slice(0, 10),
+      figures: getExtractionItems(state.result, "figure").slice(0, 10),
+      algorithms: getExtractionItems(state.result, "algorithm").slice(0, 10),
+    },
+    runbook: state.runbook || null,
+    mappings: Array.isArray(state.result?.mappings) ? state.result.mappings.slice(0, 24) : [],
+  };
 }
 
 function renderMappingEvidence(mapping) {

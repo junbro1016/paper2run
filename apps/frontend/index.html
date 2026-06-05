@@ -157,50 +157,78 @@
               </div>
             </header>
 
-            <nav class="tabs" aria-label="Result views">
-              <button class="tab is-active" type="button" data-tab="overview">Overview</button>
-              <button class="tab" type="button" data-tab="equations">Equations</button>
-              <button class="tab" type="button" data-tab="figure">Figure</button>
-              <button class="tab" type="button" data-tab="algorithm">Algorithm</button>
-              <button class="tab" type="button" data-tab="runbook">Runbook</button>
-            </nav>
+            <div class="result-workspace">
+              <div class="result-main">
+                <nav class="tabs" aria-label="Result views">
+                  <button class="tab is-active" type="button" data-tab="overview">Overview</button>
+                  <button class="tab" type="button" data-tab="equations">Equations</button>
+                  <button class="tab" type="button" data-tab="figure">Figure</button>
+                  <button class="tab" type="button" data-tab="algorithm">Algorithm</button>
+                  <button class="tab" type="button" data-tab="runbook">Runbook</button>
+                </nav>
 
-            <section id="overviewView" class="view is-active">
-              <div id="emptyState" class="visually-hidden"></div>
-              <div id="overviewGrid" class="overview-grid"></div>
-            </section>
+                <section id="overviewView" class="view is-active">
+                  <div id="emptyState" class="visually-hidden"></div>
+                  <div id="overviewGrid" class="overview-grid"></div>
+                </section>
 
-            <section id="equationsView" class="view">
-              <div id="equationList" class="component-list evidence-list"></div>
-            </section>
+                <section id="equationsView" class="view">
+                  <div id="equationList" class="component-list evidence-list"></div>
+                </section>
 
-            <section id="figureView" class="view">
-              <input id="figurePdfInput" class="visually-hidden" type="file" accept="application/pdf" />
-              <div id="figureList" class="component-list evidence-list"></div>
-            </section>
+                <section id="figureView" class="view">
+                  <input id="figurePdfInput" class="visually-hidden" type="file" accept="application/pdf" />
+                  <div id="figureList" class="component-list evidence-list"></div>
+                </section>
 
-            <section id="algorithmView" class="view">
-              <div id="algorithmList" class="component-list evidence-list"></div>
-            </section>
+                <section id="algorithmView" class="view">
+                  <div id="algorithmList" class="component-list evidence-list"></div>
+                </section>
 
-            <section id="runbookView" class="view">
-              <div class="runbook-toolbar">
-                <div>
-                  <p class="eyebrow">Reproduction guide</p>
-                  <h3>Runbook</h3>
-                  <p id="runbookSummary" class="runbook-summary">
-                    Uses the repository README, requirements, and extracted commands to draft a reproducibility path.
-                  </p>
-                </div>
-                <button id="generateRunbookBtn" class="secondary-button" type="button">Generate Runbook</button>
+                <section id="runbookView" class="view">
+                  <div class="runbook-toolbar">
+                    <div>
+                      <p class="eyebrow">Reproduction guide</p>
+                      <h3>Runbook</h3>
+                      <p id="runbookSummary" class="runbook-summary">
+                        Uses the repository README, requirements, and extracted commands to draft a reproducibility path.
+                      </p>
+                    </div>
+                    <button id="generateRunbookBtn" class="secondary-button" type="button">Generate Runbook</button>
+                  </div>
+                  <div id="runbookContent" class="runbook-content"></div>
+                </section>
+
+                <footer class="result-actions">
+                  <button id="newRunBtn" class="primary-button" type="button">＋ New analysis</button>
+                  <button id="downloadBtn" class="secondary-button" type="button" disabled>⤓ Download Result JSON</button>
+                </footer>
               </div>
-              <div id="runbookContent" class="runbook-content"></div>
-            </section>
 
-            <footer class="result-actions">
-              <button id="newRunBtn" class="primary-button" type="button">＋ New analysis</button>
-              <button id="downloadBtn" class="secondary-button" type="button" disabled>⤓ Download Result JSON</button>
-            </footer>
+              <aside class="ask-panel" aria-label="Ask about this paper">
+                <header class="ask-panel-head">
+                  <div>
+                    <p class="eyebrow">Interactive assistant</p>
+                    <h3>Ask Paper2Run</h3>
+                  </div>
+                  <span id="askContextChip" class="ask-context-chip">Result context</span>
+                </header>
+                <div id="askMessages" class="ask-messages" aria-live="polite"></div>
+                <form id="askForm" class="ask-form">
+                  <div id="askSuggestions" class="ask-suggestions"></div>
+                  <div class="ask-composer">
+                    <input
+                      id="askInput"
+                      type="text"
+                      placeholder="Ask about equations, figures, code mapping..."
+                      autocomplete="off"
+                    />
+                    <button id="askSendBtn" class="ask-send" type="submit" aria-label="Send question">↑</button>
+                  </div>
+                  <small id="askStatus" class="field-note"></small>
+                </form>
+              </aside>
+            </div>
           </div>
         </div>
       </section>

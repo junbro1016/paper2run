@@ -6,6 +6,7 @@ This service exposes:
   GET  /health
   POST /map
   POST /runbook
+  POST /chat
 
 The frontend can call POST /map with the extracted Paper2Run JSON plus a
 `github_repository.url` value. The response is the same JSON enriched with
@@ -57,6 +58,8 @@ MAX_README_CHARS = 28_000
 MAX_REQUIREMENTS_CHARS = 14_000
 MAX_COMMANDS = 24
 MAX_COMPONENTS_PER_GROUP = 12
+MAX_CHAT_CONTEXT_CHARS = 60_000
+MAX_CHAT_HISTORY = 8
 
 
 def cors_headers() -> dict[str, str]:
@@ -358,6 +361,74 @@ def call_openai_runbook(
     raise RuntimeError(f"OpenAI runbook generation failed: {last_error}")
 
 
+def call_openai_chat(
+    *,
+    api_key: str,
+    model: str,
+    question: str,
+    context: dict[str, Any],
+    messages: list[dict[str, Any]],
+    timeout: int,
+    max_retries: int,
+) -> str:
+    system_prompt = (
+        "You are Paper2Run's research assistant. Answer questions about a paper analysis result. "
+        "Use only the provided Paper2Run JSON context and prior chat messages. "
+        "If the context is scoped to a single equation, figure, algorithm, runbook, or runbook step, "
+        "focus the answer on that component and do not rely on unrelated components. "
+        "When code mappings are present, cite file names, line numbers, confidence, and verification status when useful. "
+        "If the provided context is insufficient, say what is missing instead of inventing details. "
+        "Answer in the same language as the user's question. Keep the answer concise and practical."
+    )
+    compact_messages = [
+        {
+            "role": "assistant" if item.get("role") == "assistant" else "user",
+            "content": str(item.get("content") or "")[:1800],
+        }
+        for item in messages[-MAX_CHAT_HISTORY:]
+        if item.get("content")
+    ]
+    user_prompt = {
+        "task": "Answer the user's question using the supplied Paper2Run JSON context.",
+        "question": question,
+        "context_scope": context.get("scope") or context.get("kind") or "unknown",
+        "context_title": context.get("title") or "",
+        "context_json": trim_text(json.dumps(context, ensure_ascii=False), MAX_CHAT_CONTEXT_CHARS),
+        "recent_messages": compact_messages,
+    }
+    body = {
+        "model": model,
+        "input": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": json.dumps(user_prompt, ensure_ascii=False)},
+        ],
+        "max_output_tokens": 900,
+    }
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    encoded = json.dumps(body).encode("utf-8")
+    last_error: Exception | None = None
+
+    for attempt in range(max_retries + 1):
+        request = Request(OPENAI_RESPONSES_URL, data=encoded, headers=headers, method="POST")
+        try:
+            with urlopen(request, timeout=timeout) as response:
+                raw = response.read().decode("utf-8")
+            return extract_output_text(json.loads(raw)).strip()
+        except HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            last_error = RuntimeError(f"OpenAI API HTTP {exc.code}: {detail}")
+        except (URLError, TimeoutError, json.JSONDecodeError, RuntimeError) as exc:
+            last_error = exc
+
+        if attempt < max_retries:
+            time.sleep(2**attempt)
+
+    raise RuntimeError(f"OpenAI chat failed: {last_error}")
+
+
 class MappingService:
     def __init__(self, args: argparse.Namespace):
         self.args = args
@@ -527,6 +598,32 @@ class MappingService:
             "runbook": runbook,
         }
 
+    def chat_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        question = str(payload.get("question") or "").strip()
+        if not question:
+            raise ValueError("Missing question.")
+        context = payload.get("context")
+        if not isinstance(context, dict):
+            raise ValueError("Missing context object.")
+        messages = payload.get("messages")
+        if not isinstance(messages, list):
+            messages = []
+        answer = call_openai_chat(
+            api_key=self.api_key,
+            model=self.model,
+            question=question,
+            context=context,
+            messages=[item for item in messages if isinstance(item, dict)],
+            timeout=self.args.timeout,
+            max_retries=self.args.max_retries,
+        )
+        return {
+            "answer": answer,
+            "model": self.model,
+            "context_scope": context.get("scope") or context.get("kind") or "unknown",
+            "context_title": context.get("title") or "",
+        }
+
 
 def make_handler(service: MappingService, max_body_bytes: int) -> type[BaseHTTPRequestHandler]:
     class Handler(BaseHTTPRequestHandler):
@@ -548,6 +645,7 @@ def make_handler(service: MappingService, max_body_bytes: int) -> type[BaseHTTPR
                             "health": "/health",
                             "map": "/map",
                             "runbook": "/runbook",
+                            "chat": "/chat",
                         },
                     },
                 )
@@ -566,11 +664,11 @@ def make_handler(service: MappingService, max_body_bytes: int) -> type[BaseHTTPR
 
         def do_HEAD(self) -> None:  # noqa: N802
             path = urlparse(self.path).path
-            head_response(self, 200 if path in {"/", "/health", "/map", "/runbook"} else 404)
+            head_response(self, 200 if path in {"/", "/health", "/map", "/runbook", "/chat"} else 404)
 
         def do_POST(self) -> None:  # noqa: N802
             path = urlparse(self.path).path
-            if path not in {"/map", "/runbook"}:
+            if path not in {"/map", "/runbook", "/chat"}:
                 json_response(self, 404, {"error": "Not found"})
                 return
             try:
@@ -578,6 +676,10 @@ def make_handler(service: MappingService, max_body_bytes: int) -> type[BaseHTTPR
                 if path == "/map":
                     mapped = service.map_payload(payload)
                     json_response(self, 200, mapped)
+                    return
+                if path == "/chat":
+                    chat = service.chat_payload(payload)
+                    json_response(self, 200, chat)
                     return
                 runbook = service.runbook_payload(payload)
                 json_response(self, 200, runbook)

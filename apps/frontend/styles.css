@@ -949,6 +949,17 @@ body[data-stage="result"] .response-result {
   background: rgba(255, 255, 255, 0.03);
 }
 
+.result-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 380px);
+  gap: 20px;
+  align-items: start;
+}
+
+.result-main {
+  min-width: 0;
+}
+
 .tab,
 .subtab {
   min-height: 36px;
@@ -1112,6 +1123,13 @@ body[data-stage="result"] .response-result {
   font-size: 16px;
 }
 
+.runbook-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
 .runbook-step p {
   margin-top: 6px;
 }
@@ -1136,6 +1154,193 @@ body[data-stage="result"] .response-result {
   margin-top: 20px;
   padding-top: 18px;
   border-top: 1px solid var(--line);
+}
+
+/* ============ ASK PANEL ============ */
+.ask-panel {
+  position: sticky;
+  top: 98px;
+  display: grid;
+  grid-template-rows: auto minmax(360px, calc(100vh - 330px)) auto;
+  min-height: 620px;
+  max-height: calc(100vh - 126px);
+  overflow: hidden;
+  border: 1px solid var(--glass-line);
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at 0% 0%, rgba(54, 214, 198, 0.08), transparent 34%),
+    rgba(8, 13, 19, 0.72);
+  box-shadow: var(--shadow-sm);
+}
+
+.ask-panel-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.ask-panel-head h3 {
+  margin: 5px 0 0;
+  font-size: 19px;
+  line-height: 1.15;
+}
+
+.ask-context-chip {
+  align-self: start;
+  max-width: 160px;
+  padding: 6px 9px;
+  overflow: hidden;
+  border: 1px solid rgba(52, 230, 168, 0.28);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ask-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.ask-message {
+  display: flex;
+}
+
+.ask-message.is-user {
+  justify-content: flex-end;
+}
+
+.ask-bubble {
+  max-width: 88%;
+  padding: 12px 13px;
+  border: 1px solid var(--glass-line);
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.ask-message.is-user .ask-bubble {
+  border-color: rgba(90, 169, 239, 0.32);
+  background: rgba(90, 169, 239, 0.14);
+  color: var(--ink);
+}
+
+.ask-bubble strong {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.ask-bubble small {
+  display: block;
+  margin-top: 8px;
+  color: var(--faint);
+  font-size: 11px;
+}
+
+.ask-form {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-top: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.ask-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.ask-suggestion,
+.ask-about-button {
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 999px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ask-suggestion:hover,
+.ask-about-button:hover {
+  border-color: rgba(52, 230, 168, 0.4);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.ask-about-button {
+  flex: none;
+  min-height: 32px;
+  border-color: rgba(52, 230, 168, 0.24);
+  background: rgba(52, 230, 168, 0.08);
+  color: var(--accent);
+}
+
+.ask-composer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 42px;
+  gap: 8px;
+}
+
+.ask-composer input {
+  min-height: 44px;
+}
+
+.ask-send {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  min-height: 44px;
+  border: 0;
+  border-radius: 12px;
+  background: linear-gradient(150deg, #4cf0b6, var(--accent-strong));
+  color: #04140d;
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.typing-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 5px;
+  border-radius: 999px;
+  background: var(--accent);
+  animation: ask-typing 1s ease-in-out infinite;
+}
+
+.typing-dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.typing-dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes ask-typing {
+  0%,
+  80%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
 }
 
 .primary-button {
@@ -2107,8 +2312,14 @@ body[data-stage="result"] .response-result {
   .overview-grid,
   .overview-brief,
   .evidence-card,
+  .result-workspace,
   .runbook-hero {
     grid-template-columns: 1fr;
+  }
+
+  .ask-panel {
+    position: static;
+    max-height: none;
   }
 
   .skills-panel {
