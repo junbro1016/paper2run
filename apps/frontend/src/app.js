@@ -232,6 +232,14 @@ function wireEvents() {
       return;
     }
 
+    const toggleButton = event.target.closest("[data-component-toggle]");
+    if (toggleButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleEvidenceCard(toggleButton);
+      return;
+    }
+
     const button = event.target.closest(".code-copy");
     if (button) {
       event.preventDefault();
@@ -1817,6 +1825,8 @@ function renderEvidenceCard(type, item, index) {
     (a, b) => statusRank(a.verification_status) - statusRank(b.verification_status),
   );
   const title = componentTitle(item, type, index);
+  const isVerified = mappings.some((mapping) => String(mapping.verification_status || "").toLowerCase() === "verified");
+  const isCollapsed = !isVerified;
   const askContextId = registerAskContext({
     kind: type,
     title,
@@ -1824,7 +1834,7 @@ function renderEvidenceCard(type, item, index) {
   });
 
   return `
-    <article class="evidence-card component-card" data-kind="${escapeAttribute(type)}">
+    <article class="evidence-card component-card${isCollapsed ? " is-collapsed" : ""}" data-kind="${escapeAttribute(type)}" data-status="${isVerified ? "verified" : "unverified"}">
       <div class="evidence-paper">
         <div class="evidence-head">
           <div class="evidence-title">
@@ -1834,7 +1844,12 @@ function renderEvidenceCard(type, item, index) {
               <h3>${escapeHtml(String(title).slice(0, 180))}</h3>
             </div>
           </div>
-          ${askButton(askContextId)}
+          <div class="evidence-actions">
+            ${askButton(askContextId)}
+            <button class="card-toggle" type="button" data-component-toggle aria-expanded="${isCollapsed ? "false" : "true"}">
+              ${isCollapsed ? "Expand" : "Hide"}
+            </button>
+          </div>
         </div>
         <div class="component-meta">${escapeHtml(componentMeta(item) || `${type} component`)}</div>
         <div class="component-body">${renderComponentBody(item, type)}</div>
@@ -1853,6 +1868,15 @@ function renderEvidenceCard(type, item, index) {
       </div>
     </article>
   `;
+}
+
+function toggleEvidenceCard(button) {
+  const card = button.closest(".component-card");
+  if (!card) return;
+  const willExpand = card.classList.contains("is-collapsed");
+  card.classList.toggle("is-collapsed", !willExpand);
+  button.setAttribute("aria-expanded", String(willExpand));
+  button.textContent = willExpand ? "Hide" : "Expand";
 }
 
 function resetAskState() {

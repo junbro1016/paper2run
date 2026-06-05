@@ -2128,6 +2128,16 @@ body[data-stage="result"] .response-result {
   margin-top: 4px;
 }
 
+.component-card.is-collapsed.evidence-card {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+
+.component-card.is-collapsed .component-body,
+.component-card.is-collapsed .evidence-code {
+  display: none;
+}
+
 .evidence-card {
   grid-template-columns: minmax(280px, 0.9fr) minmax(360px, 1.1fr);
   gap: 18px;
@@ -2141,6 +2151,29 @@ body[data-stage="result"] .response-result {
   justify-content: space-between;
   align-items: flex-start;
   gap: 12px;
+}
+
+.evidence-actions {
+  display: flex;
+  flex: none;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.card-toggle {
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--glass-line-strong);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--ink-soft);
+  font-weight: 800;
+}
+
+.card-toggle:hover {
+  border-color: rgba(76, 240, 182, 0.38);
+  color: var(--accent);
 }
 
 .evidence-title {
