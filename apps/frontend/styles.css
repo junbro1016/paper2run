@@ -1737,8 +1737,7 @@ body[data-stage="result"] .response-result {
   gap: 14px;
 }
 
-.representative-figure h3,
-.figure-panel strong {
+.representative-figure h3 {
   display: block;
   margin: 8px 0 8px;
   color: var(--ink);

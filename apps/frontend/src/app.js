@@ -1564,10 +1564,7 @@ function renderFigurePanel(item) {
   return `
     <div class="figure-panel">
       ${figureVisual(item, caption)}
-      <div>
-        <strong>${escapeHtml(caption)}</strong>
-        ${insight ? `<p>${escapeHtml(insight)}</p>` : ""}
-      </div>
+      ${insight ? `<div><p>${escapeHtml(insight)}</p></div>` : ""}
     </div>
   `;
 }
@@ -1737,7 +1734,7 @@ function renderRunbookStep(step, index) {
             ? commands
                 .map((command) => `
                   <div class="code-card">
-                    <div class="code-head"><span>Command</span><button class="code-copy" type="button">Copy</button></div>
+                    <div class="code-card-head"><span class="code-spacer"></span><button class="code-copy" type="button">Copy</button></div>
                     <pre class="code-body"><code data-raw="${escapeAttribute(command)}">${escapeHtml(command)}</code></pre>
                   </div>
                 `)
