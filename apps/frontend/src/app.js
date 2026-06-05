@@ -5,6 +5,9 @@ const LEGACY_API_BASE_URLS = new Set(["https://paper2run-production.up.railway.a
 const LEGACY_DEFAULT_REPO_URLS = new Set(["https://github.com/tensorflow/tensor2tensor"]);
 const SETTINGS_STORAGE_KEY = "paper2run.pipeline.frontend.settings";
 const JOB_STORAGE_KEY = "paper2run.pipeline.frontend.lastJob";
+const PAPER_DB_NAME = "paper2run.pipeline.frontend.files";
+const PAPER_DB_VERSION = 1;
+const PAPER_STORE_NAME = "paperPdfs";
 const POLL_INITIAL_INTERVAL_MS = 5000;
 const POLL_LATER_INTERVAL_MS = 12000;
 const POLL_FAST_WINDOW_MS = 60000;
@@ -162,6 +165,7 @@ function wireEvents() {
 
   elements.pdfInput.addEventListener("change", () => {
     state.file = elements.pdfInput.files?.[0] || null;
+    if (state.file) setPaperPdf(state.file);
     renderFileMeta();
     updateControls();
   });
@@ -310,6 +314,66 @@ function normalizeRepoUrl(value) {
   return normalized;
 }
 
+function openPaperDb() {
+  if (!window.indexedDB) return Promise.reject(new Error("IndexedDB is unavailable."));
+  return new Promise((resolve, reject) => {
+    const request = window.indexedDB.open(PAPER_DB_NAME, PAPER_DB_VERSION);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(PAPER_STORE_NAME)) {
+        db.createObjectStore(PAPER_STORE_NAME, { keyPath: "job_id" });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error("Could not open PDF cache."));
+  });
+}
+
+async function savePaperPdfForJob(jobId, file) {
+  if (!jobId || !file) return;
+  const db = await openPaperDb();
+  try {
+    await paperDbRequest(db, "readwrite", (store) =>
+      store.put({
+        job_id: jobId,
+        filename: file.name || "",
+        file,
+        savedAt: Date.now(),
+      }),
+    );
+  } finally {
+    db.close();
+  }
+}
+
+async function restorePaperPdfForJob(job) {
+  if (getPaperPdfFile() || !job?.job_id) return;
+  try {
+    const db = await openPaperDb();
+    try {
+      const record = await paperDbRequest(db, "readonly", (store) => store.get(job.job_id));
+      if (record?.file) {
+        setPaperPdf(record.file);
+        addStatus(`Restored PDF preview source: ${record.filename || job.filename || "paper.pdf"}`, "done");
+      }
+    } finally {
+      db.close();
+    }
+  } catch {
+    // The PDF cache is best-effort; users can still attach the PDF manually.
+  }
+}
+
+function paperDbRequest(db, mode, operation) {
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(PAPER_STORE_NAME, mode);
+    const request = operation(transaction.objectStore(PAPER_STORE_NAME));
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error("PDF cache request failed."));
+    transaction.onerror = () => reject(transaction.error || new Error("PDF cache transaction failed."));
+  });
+}
+
 function saveSettings() {
   try {
     window.localStorage.setItem(
@@ -364,13 +428,17 @@ function restoreSavedJob() {
     if (saved.status === "done") {
       addStatus(`Restored completed job: ${saved.job_id}. Fetching result.`, "pending");
       state.busy = true;
-      fetchFullResult(saved.job_id).finally(() => setBusy(false));
+      restorePaperPdfForJob(saved)
+        .finally(() => fetchFullResult(saved.job_id))
+        .finally(() => setBusy(false));
     } else {
       addStatus(`Restored job: ${saved.job_id}`, "pending");
       state.polling = true;
       state.busy = true;
       state.pollStartedAt = saved.savedAt || Date.now();
-      pollUntilDone(saved.job_id).finally(() => setBusy(false));
+      restorePaperPdfForJob(saved)
+        .finally(() => pollUntilDone(saved.job_id))
+        .finally(() => setBusy(false));
     }
   } catch {
     // Ignore corrupt saved job metadata.
@@ -438,6 +506,7 @@ function renderFileMeta() {
 
 async function runPipeline() {
   if (!state.file || !state.repoUrl) return;
+  setPaperPdf(state.file);
 
   state.result = null;
   state.runbook = null;
@@ -475,6 +544,7 @@ async function runPipeline() {
 
     state.job = started;
     saveJobSnapshot(started);
+    savePaperPdfForJob(started.job_id, state.file).catch(() => {});
     addStatus(`Job started: ${started.job_id}`, "done");
     render();
 
@@ -701,6 +771,10 @@ function clearAll() {
   state.polling = false;
   state.pollStartedAt = null;
   state.transientFetchFailures = 0;
+  paperPdf.file = null;
+  paperPdf.docFile = null;
+  paperPdf.docPromise = null;
+  figureCropCache.clear();
   try {
     window.localStorage.removeItem(JOB_STORAGE_KEY);
   } catch {
