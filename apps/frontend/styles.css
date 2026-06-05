@@ -135,7 +135,7 @@ a {
   z-index: 20;
   display: flex;
   align-items: center;
-  width: min(1320px, calc(100% - 40px));
+  width: min(1720px, calc(100% - 40px));
   margin: 16px auto 0;
   padding: 10px 14px;
   border: 1px solid var(--glass-line);
@@ -546,7 +546,7 @@ body[data-stage="result"] .response-result {
 .thread {
   flex-direction: column;
   gap: 18px;
-  width: min(1380px, calc(100% - 56px));
+  width: min(1720px, calc(100% - 40px));
   margin: 0 auto;
   padding: clamp(28px, 6vh, 56px) 0 90px;
 }
@@ -951,8 +951,8 @@ body[data-stage="result"] .response-result {
 
 .result-workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(340px, 380px);
-  gap: 20px;
+  grid-template-columns: minmax(0, 1fr) minmax(400px, 430px);
+  gap: 24px;
   align-items: start;
 }
 
@@ -1161,8 +1161,9 @@ body[data-stage="result"] .response-result {
   position: sticky;
   top: 98px;
   display: grid;
-  grid-template-rows: auto minmax(360px, calc(100vh - 330px)) auto;
-  min-height: 620px;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  height: calc(100vh - 126px);
+  min-height: min(640px, calc(100vh - 126px));
   max-height: calc(100vh - 126px);
   overflow: hidden;
   border: 1px solid var(--glass-line);
