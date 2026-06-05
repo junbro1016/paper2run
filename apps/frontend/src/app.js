@@ -13,8 +13,10 @@ const POLL_LATER_INTERVAL_MS = 12000;
 const POLL_FAST_WINDOW_MS = 60000;
 const FETCH_TIMEOUT_MS = 30000;
 const MAX_TRANSIENT_FETCH_RETRIES = 5;
+const MIN_PROCESS_STEP_MS = 2400;
+const PROCESS_RENDER_INTERVAL_MS = 500;
 
-const PIPELINE_STEPS = ["Profile", "Extract", "Ground", "Verify"];
+const PIPELINE_STEPS = ["Profile", "Extract", "Ground", "Verify", "Finalize"];
 
 // Figure preview state (crop figures out of an uploaded PDF by bbox).
 const paperPdf = { file: null, docFile: null, docPromise: null };
@@ -46,6 +48,8 @@ const state = {
   lastStageIndex: -1,
   polling: false,
   pollStartedAt: null,
+  processStartedAt: null,
+  processRenderTimer: null,
   transientFetchFailures: 0,
   mathTypesetTimer: null,
 };
@@ -199,6 +203,7 @@ function wireEvents() {
   elements.brandHome?.addEventListener("click", () => goToLanding());
   elements.procBackBtn?.addEventListener("click", () => {
     state.polling = false;
+    stopProcessRenderTicker();
     goToLanding();
   });
 
@@ -435,17 +440,27 @@ function restoreSavedJob() {
     if (saved.status === "done") {
       addStatus(`Restored completed job: ${saved.job_id}. Fetching result.`, "pending");
       state.busy = true;
+      state.processStartedAt = saved.savedAt || Date.now();
+      startProcessRenderTicker();
       restorePaperPdfForJob(saved)
         .finally(() => fetchFullResult(saved.job_id))
-        .finally(() => setBusy(false));
+        .finally(() => {
+          stopProcessRenderTicker();
+          setBusy(false);
+        });
     } else {
       addStatus(`Restored job: ${saved.job_id}`, "pending");
       state.polling = true;
       state.busy = true;
       state.pollStartedAt = saved.savedAt || Date.now();
+      state.processStartedAt = state.pollStartedAt;
+      startProcessRenderTicker();
       restorePaperPdfForJob(saved)
         .finally(() => pollUntilDone(saved.job_id))
-        .finally(() => setBusy(false));
+        .finally(() => {
+          stopProcessRenderTicker();
+          setBusy(false);
+        });
     }
   } catch {
     // Ignore corrupt saved job metadata.
@@ -526,6 +541,8 @@ async function runPipeline() {
   state.lastStageIndex = -1;
   state.polling = true;
   state.pollStartedAt = Date.now();
+  state.processStartedAt = state.pollStartedAt;
+  startProcessRenderTicker();
   state.transientFetchFailures = 0;
   setBusy(true);
   render();
@@ -558,6 +575,7 @@ async function runPipeline() {
     await pollUntilDone(started.job_id);
   } catch (error) {
     state.polling = false;
+    stopProcessRenderTicker();
     state.job = {
       ...(state.job || {}),
       status: "error",
@@ -603,6 +621,8 @@ async function pollUntilDone(jobId) {
     render();
 
     if (job.status === "done") {
+      await waitForProcessDisplayCompletion();
+      if (!state.polling) return;
       await fetchFullResult(jobId);
       state.polling = false;
       return;
@@ -675,6 +695,7 @@ async function fetchFullResult(jobId) {
   state.runbookMeta = runbookMeta;
   state.runbookError = runbookError;
   state.runbookBusy = false;
+  stopProcessRenderTicker();
   resetAskState();
   saveJobSnapshot({ ...finalResult, status: "done" });
   state.activeTab = "overview";
@@ -810,6 +831,8 @@ function clearAll() {
   state.statuses = [];
   state.polling = false;
   state.pollStartedAt = null;
+  state.processStartedAt = null;
+  stopProcessRenderTicker();
   state.transientFetchFailures = 0;
   paperPdf.file = null;
   paperPdf.docFile = null;
@@ -1035,11 +1058,41 @@ function renderStage() {
   document.body.dataset.stage = stage;
 }
 
+function startProcessRenderTicker() {
+  if (state.processRenderTimer) return;
+  state.processRenderTimer = window.setInterval(() => {
+    if (document.body.dataset.stage === "processing") renderProcessing();
+  }, PROCESS_RENDER_INTERVAL_MS);
+}
+
+function stopProcessRenderTicker() {
+  if (!state.processRenderTimer) return;
+  window.clearInterval(state.processRenderTimer);
+  state.processRenderTimer = null;
+}
+
+function elapsedProcessStageIndex() {
+  const startedAt = state.processStartedAt || state.pollStartedAt || Date.now();
+  return Math.min(
+    PROCESS_STEPS.length - 1,
+    Math.floor(Math.max(0, Date.now() - startedAt) / MIN_PROCESS_STEP_MS),
+  );
+}
+
+async function waitForProcessDisplayCompletion() {
+  if (!state.processStartedAt) state.processStartedAt = Date.now();
+  const minDuration = PROCESS_STEPS.length * MIN_PROCESS_STEP_MS;
+  while (state.polling && Date.now() - state.processStartedAt < minDuration) {
+    renderProcessing();
+    await delay(PROCESS_RENDER_INTERVAL_MS);
+  }
+}
+
 // The polling payload has no explicit stage field, so infer the current
 // step from the status string and from which result fields are populated.
-function currentStageIndex() {
+function currentBackendStageIndex() {
   const job = state.job;
-  if (state.result || job?.status === "done") return PIPELINE_STEPS.length;
+  if (state.result || job?.status === "done") return PROCESS_STEPS.length - 1;
   if (!job) return 0;
 
   const s = String(job.status || "").toLowerCase();
@@ -1052,6 +1105,12 @@ function currentStageIndex() {
   if (job.total_extracted) return 2;
   if (job.plan_summary || job.profile_summary) return 1;
   return 0;
+}
+
+function currentStageIndex() {
+  const backendStage = currentBackendStageIndex();
+  const elapsedStage = elapsedProcessStageIndex();
+  return Math.min(backendStage, elapsedStage);
 }
 
 function renderThreadRequest() {
@@ -1118,7 +1177,7 @@ function currentProcessInfo(stageIndex) {
   const job = state.job || {};
   const runtime = Array.isArray(job.runtime_log) ? job.runtime_log.at(-1) : null;
   const runtimeName = runtime?.agent || runtime?.stage || runtime?.name || runtime?.node;
-  if (runtimeName) {
+  if (runtimeName && currentBackendStageIndex() <= index) {
     return {
       ...step,
       agent: runtimeName,
@@ -2326,9 +2385,10 @@ function renderMatch(match, index = 0) {
   const fileName = String(file).split("/").pop();
   const lineLabel =
     match.line_start != null ? `L${match.line_start}${match.line_end ? `–${match.line_end}` : ""}` : "";
-  const snippet = match.matched_code_snippet || "";
+  const snippet = codeSnippetForMatch(match);
+  const fallbackSnippet = snippet || codeFallbackForMatch(match);
 
-  const hasCode = Boolean(snippet) || Number(match.line_start) > 0;
+  const hasCode = Boolean(fallbackSnippet) || Number(match.line_start) > 0;
 
   return `
     <div class="code-card"
@@ -2337,7 +2397,8 @@ function renderMatch(match, index = 0) {
       data-end="${escapeAttribute(match.line_end ?? "")}"
       data-repo="${escapeAttribute(githubUrl || "")}"
       data-link="${escapeAttribute(link)}"
-      data-snippet="${escapeAttribute(snippet)}">
+      data-snippet="${escapeAttribute(snippet)}"
+      data-fallback-snippet="${escapeAttribute(fallbackSnippet)}">
       <div class="code-card-head">
         <span class="code-dot" aria-hidden="true"></span>
         <span class="code-file" title="${escapeAttribute(file)}">${escapeHtml(fileName)}</span>
@@ -2353,13 +2414,37 @@ function renderMatch(match, index = 0) {
           ? `<a class="code-open" href="${escapeAttribute(link)}" target="_blank" rel="noreferrer" title="Open this code location on GitHub">
               <div class="code-scroll" data-state="loading">
                 <pre class="code-gutter" aria-hidden="true"></pre>
-                <pre class="code-body"><code>${escapeHtml(snippet) || "// loading code from GitHub…"}</code></pre>
+                <pre class="code-body"><code>${escapeHtml(fallbackSnippet) || "// loading code from GitHub..."}</code></pre>
               </div>
             </a>`
           : `<div class="code-none">No matching code location was provided.</div>`
       }
     </div>
   `;
+}
+
+function codeSnippetForMatch(match) {
+  return [
+    match.matched_code_snippet,
+    match.code_snippet,
+    match.snippet,
+    match.code_excerpt,
+    match.excerpt,
+    match.code,
+  ]
+    .map((value) => String(value || "").trim())
+    .find(Boolean) || "";
+}
+
+function codeFallbackForMatch(match) {
+  const start = Number(match.line_start);
+  if (!match.file || !Number.isFinite(start) || start <= 0) return "";
+  const file = match.file || "matched file";
+  const line =
+    match.line_start != null
+      ? `L${match.line_start}${match.line_end ? `-${match.line_end}` : ""}`
+      : "linked source";
+  return `// Loading grounded source from ${file} ${line}...\n// Use the GitHub link above if the raw source is unavailable.`;
 }
 
 const fileCache = new Map();
@@ -2475,20 +2560,25 @@ async function enhanceCard(card) {
   if (!card.querySelector(".code-scroll")) return;
 
   const snippet = card.dataset.snippet || "";
+  const fallbackSnippet = card.dataset.fallbackSnippet || "";
   const start = Number(card.dataset.start);
   const end = Number(card.dataset.end);
   const repoInfo = parseRepo(card.dataset.repo);
 
   // Default to the snippet the pipeline returned; upgrade to the real file when possible.
   if (snippet) paintCode(card, snippet, start || 1);
+  else if (fallbackSnippet) paintCode(card, fallbackSnippet, start || 1);
 
   if (!repoInfo || !card.dataset.file || !Number.isFinite(start) || start <= 0) return;
 
   const text = await fetchRepoFile(repoInfo.owner, repoInfo.repo, card.dataset.file);
   if (!text) return;
   const all = text.split("\n");
-  const from = Math.max(1, start);
-  const to = Number.isFinite(end) && end >= from ? end : from;
+  const requestedEnd = Number.isFinite(end) && end >= start ? end : start;
+  const contextBefore = 3;
+  const contextAfter = Math.max(5, 10 - (requestedEnd - start + 1));
+  const from = Math.max(1, start - contextBefore);
+  const to = Math.min(all.length, requestedEnd + contextAfter);
   const slice = all.slice(from - 1, to).join("\n");
   if (slice.trim()) paintCode(card, slice, from);
 }

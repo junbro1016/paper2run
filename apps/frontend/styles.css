@@ -1572,6 +1572,7 @@ body[data-stage="result"] .response-result {
 
 .code-scroll {
   display: flex;
+  min-height: 150px;
   max-height: none;
   overflow-x: auto;
   overflow-y: visible;
